@@ -44,3 +44,4 @@ export interface Plan {
 export interface ValidationIssue { code: string; message: string; severity: 'error' | 'warning'; playerId?: string; rallyId?: string }
 export interface RallyMetrics { power: number; capacity: number | null }
 export interface AppExport { version: 1; exportedAt: string; players: Player[]; plans: Plan[] }
+export interface MapTower { id: string; name: string; x: number; y: number; color: string; createdAt: string; updatedAt: string }
