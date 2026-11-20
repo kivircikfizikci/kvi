@@ -30,5 +30,5 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   for(const t of sortedTowers){const p=project(t,camera,w,h);playerMarker(ctx,p.x,p.y,t.color,scale,showPlayerDetails)}
   if(options.pointer&&camera.zoom>=.2){const p={x:clampCoordinate(options.pointer.x),y:clampCoordinate(options.pointer.y)},s=project(p,camera,w,h),rx=(TILE_WIDTH/2)*camera.zoom,ry=(TILE_HEIGHT/2)*camera.zoom;ctx.strokeStyle='#f5a55a';ctx.lineWidth=2;ctx.strokeRect(s.x-rx,s.y-ry,rx*2,ry*2);ctx.fillStyle='#f6c48e';ctx.font='12px Inter, system-ui';ctx.fillText(`X:${p.x} Y:${p.y}`,s.x+10,s.y-10)}
   ctx.fillStyle='rgba(7,10,15,.78)';ctx.fillRect(12,h-38,255,26);ctx.fillStyle='#c5cfdd';ctx.font='12px Inter, system-ui';ctx.fillText(`Center X:${Math.round(camera.x)} Y:${Math.round(camera.y)}  ·  ${Math.round(camera.zoom*100)}%`,22,h-21)
-  if(showPlayerDetails)for(const t of sortedTowers){const p=project(t,camera,w,h);roundedLabel(ctx,p.x,p.y-16*scale-44,t.name,`X:${t.x}  Y:${t.y}`,t.color)}
+  if(showPlayerDetails)for(const t of sortedTowers){const p=project(t,camera,w,h);roundedLabel(ctx,p.x,p.y-31,t.name,`X:${t.x}  Y:${t.y}`,t.color)}
 }
