@@ -27,7 +27,7 @@ export const ARMORIES:FixedBuilding[]=[
   {id:'armory-8',name:'Armory 8',type:'armory',x:462,y:500,size:9},
 ]
 export const FIXED_BUILDINGS=[CAPITAL,...TURRETS,...ARMORIES]
-export const CAPITAL_BLOCKED={minX:489,maxX:503,minY:486,maxY:500}
+export const CAPITAL_BLOCKED={minX:489,maxX:503,minY:487,maxY:501}
 
 export function project(point:MapPoint,camera:Camera,width:number,height:number){
   return{x:width/2+(point.x-camera.x)*TILE_WIDTH*camera.zoom,y:height/2-(point.y-camera.y)*TILE_HEIGHT*camera.zoom}
