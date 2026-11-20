@@ -14,6 +14,7 @@ const emptyProfile:AllianceProfile={id:'primary',name:'',tag:'',state:'',updated
 export function AllianceHub({onEdit,onData}:{onEdit:(player:Player|null)=>void;onData:()=>void}){
   const players=usePlannerStore(state=>state.players)
   const savePlayer=usePlannerStore(state=>state.savePlayer)
+  const deletePlayer=usePlannerStore(state=>state.deletePlayer)
   const [profile,setProfile]=useState<AllianceProfile>(emptyProfile)
   const [query,setQuery]=useState('')
   const [screenshots,setScreenshots]=useState<{file:File;url:string}[]>([])
@@ -62,7 +63,7 @@ export function AllianceHub({onEdit,onData}:{onEdit:(player:Player|null)=>void;o
       <section className="alliance-card alliance-ranking">
         <header><div><p className="eyebrow">Shared players</p><h3>Power ranking</h3></div><div className="alliance-search"><Search/><Input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search players"/></div></header>
         <div className="ranking-head"><span>#</span><span>Player</span><span>Power</span><span>Availability</span><span/></div>
-        <div className="ranking-list">{ranked.map((player,index)=><article key={player.id}><b>{index+1}</b><span><strong>{player.name}</strong><small>F1 {formatPower(player.formations[1].power)} · F2 {formatPower(player.formations[2].power)} · F3 {formatPower(player.formations[3].power)} · F4 {formatPower(player.formations[4].power)}</small></span><strong>{formatPower(player.totalPower)}</strong><Badge tone={player.availability==='unavailable'?'muted':'blue'}>{player.availability==='both'?'Both rounds':player.availability.replace('round','R')}</Badge><button onClick={()=>onEdit(player)} aria-label={`Edit ${player.name}`}><Pencil/></button></article>)}{!ranked.length&&<div className="alliance-empty">No players found.</div>}</div>
+        <div className="ranking-list">{ranked.map((player,index)=><article key={player.id}><b>{index+1}</b><span><strong>{player.name}</strong><small>F1 {formatPower(player.formations[1].power)} · F2 {formatPower(player.formations[2].power)} · F3 {formatPower(player.formations[3].power)} · F4 {formatPower(player.formations[4].power)}</small></span><strong>{formatPower(player.totalPower)}</strong><Badge tone={player.availability==='unavailable'?'muted':'blue'}>{player.availability==='both'?'Both rounds':player.availability.replace('round','R')}</Badge><span className="ranking-actions"><button onClick={()=>onEdit(player)} aria-label={`Edit ${player.name}`} title="Edit player"><Pencil/></button><button onClick={()=>{if(confirm(`Delete ${player.name} from the alliance? This also removes them from rally plans.`))deletePlayer(player.id)}} aria-label={`Delete ${player.name}`} title="Delete player"><Trash2/></button></span></article>)}{!ranked.length&&<div className="alliance-empty">No players found.</div>}</div>
       </section>
     </div>
   </main>
