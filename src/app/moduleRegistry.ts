@@ -1,16 +1,17 @@
-import { MapPinned, Swords, type LucideIcon } from 'lucide-react'
+import { MapPinned, Swords, UsersRound, type LucideIcon } from 'lucide-react'
 
-export type PlannerModuleId='rally-planner'|'battle-map'
+export type PlannerModuleId='rally-planner'|'battle-map'|'alliance'
 export interface PlannerModuleDefinition { id:PlannerModuleId; label:string; description:string; icon:LucideIcon }
 
 export const PLANNER_MODULES:PlannerModuleDefinition[]=[
   {id:'rally-planner',label:'Rally Planner',description:'Players, rounds, rally leaders and formations',icon:Swords},
   {id:'battle-map',label:'Battle Map',description:'Coordinate-based Capital Clash planning',icon:MapPinned},
+  {id:'alliance',label:'Alliance',description:'Alliance profile, roster and power rankings',icon:UsersRound},
 ]
 
 export function initialModule(search:string):PlannerModuleId{
   const params=new URLSearchParams(search),requested=params.get('module')
-  if(requested==='battle-map'||requested==='rally-planner')return requested
+  if(requested==='battle-map'||requested==='rally-planner'||requested==='alliance')return requested
   return params.get('view')==='map'?'battle-map':'rally-planner'
 }
 

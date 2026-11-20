@@ -45,3 +45,4 @@ export interface ValidationIssue { code: string; message: string; severity: 'err
 export interface RallyMetrics { power: number; capacity: number | null }
 export interface AppExport { version: 1; exportedAt: string; players: Player[]; plans: Plan[] }
 export interface MapTower { id: string; playerId?: string; name: string; x: number; y: number; color: string; createdAt: string; updatedAt: string }
+export interface AllianceProfile { id: 'primary'; name: string; tag: string; state: string; updatedAt: string }
