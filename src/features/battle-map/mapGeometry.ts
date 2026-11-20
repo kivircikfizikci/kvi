@@ -9,7 +9,7 @@ export interface MapPoint { x: number; y: number }
 export interface Camera { x: number; y: number; zoom: number }
 export interface FixedBuilding extends MapPoint { id: string; name: string; type: 'capital'|'turret'|'armory'; size: number }
 
-export const CAPITAL:FixedBuilding={id:'capital',name:'Capital',type:'capital',x:496,y:496,size:15}
+export const CAPITAL:FixedBuilding={id:'capital',name:'Capital',type:'capital',x:496,y:494,size:15}
 export const TURRETS:FixedBuilding[]=[
   {id:'turret-1',name:'Turret 1',type:'turret',x:489,y:501,size:2},
   {id:'turret-2',name:'Turret 2',type:'turret',x:489,y:487,size:2},
