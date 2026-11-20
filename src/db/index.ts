@@ -6,6 +6,7 @@ class PlannerDatabase extends Dexie {
   plans!: EntityTable<Plan, 'id'>
   mapTowers!: EntityTable<MapTower, 'id'>
   constructor() {
+    // Preserve the original storage key so existing browser data survives the product rename.
     super('frankenstein-rally-planner')
     this.version(1).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt' })
     this.version(2).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt' })

@@ -1,6 +1,13 @@
-# Frankenstein Rally Planner
+# KVI Dark War: Survival Planner
 
-A local-first rally planning dashboard for the Frankenstein event in Dark War: Survival.
+An expandable, local-first planning and organization suite for Dark War: Survival alliance operations.
+
+## Modules
+
+- **Rally Planner** — player roster, two-round Frankenstein rally planning, validation and optimization.
+- **Battle Map** — persistent coordinate planning for Capital Clash, including fixed objectives and player tower placement.
+
+New tools are registered in `src/app/moduleRegistry.ts`. Each feature owns its UI and domain logic under `src/features/<module>`, keeping the application shell independent from individual event mechanics.
 
 ## Run locally
 
