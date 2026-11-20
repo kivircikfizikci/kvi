@@ -1,8 +1,9 @@
 import { describe,expect,it } from 'vitest'
 import type { MapTower } from '../../types'
-import { CAPITAL_BLOCKED,project,unproject,validateTowerPosition } from './mapGeometry'
+import { CAPITAL_BLOCKED,project,TILE_HEIGHT,TILE_WIDTH,unproject,validateTowerPosition } from './mapGeometry'
 
 describe('battle map geometry',()=>{
+ it('uses compact 60 by 40 pixel tiles at maximum zoom',()=>{expect({width:TILE_WIDTH,height:TILE_HEIGHT}).toEqual({width:60,height:40})})
  it('round-trips map coordinates with Y increasing upward',()=>{const camera={x:496,y:496,zoom:1};const screen=project({x:504,y:487},camera,1200,800);const point=unproject(screen.x,screen.y,camera,1200,800);expect(point.x).toBeCloseTo(504);expect(point.y).toBeCloseTo(487);expect(project({x:462,y:539},camera,1200,800).y).toBeLessThan(project({x:462,y:460},camera,1200,800).y)})
  it('blocks the Capital no-teleport zone',()=>{expect(validateTowerPosition(496,496,[])).toContain('no-teleport')})
  it('shifts the Capital no-teleport zone one coordinate upward',()=>{expect(CAPITAL_BLOCKED).toEqual({minX:489,maxX:503,minY:487,maxY:501})})

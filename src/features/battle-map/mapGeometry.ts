@@ -2,8 +2,8 @@ import type { MapTower } from '../../types'
 
 export const MAP_MIN = 0
 export const MAP_MAX = 999
-export const TILE_WIDTH = 150
-export const TILE_HEIGHT = 75
+export const TILE_WIDTH = 60
+export const TILE_HEIGHT = 40
 
 export interface MapPoint { x: number; y: number }
 export interface Camera { x: number; y: number; zoom: number }
