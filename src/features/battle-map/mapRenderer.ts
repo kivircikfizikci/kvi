@@ -1,5 +1,5 @@
 import type { MapTower } from '../../types'
-import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, clampCoordinate, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
+import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, clampCoordinate, fixedBuildingFootprint, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
 
 interface RenderOptions { selectedId?:string|null; pointer?:{x:number;y:number}|null; exportMode?:boolean }
 const polygon=(ctx:CanvasRenderingContext2D,points:{x:number;y:number}[])=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath()}
@@ -20,8 +20,8 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
     for(let y=startY;y<=maxY;y+=step){const a=project({x:minX-.5,y:y-.5},camera,w,h),b=project({x:maxX+.5,y:y-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
   }
   area(ctx,camera,w,h,CAPITAL_BLOCKED.minX,CAPITAL_BLOCKED.maxX,CAPITAL_BLOCKED.minY,CAPITAL_BLOCKED.maxY,'rgba(187,63,63,.18)','rgba(255,100,100,.65)')
-  for(const b of ARMORIES){const half=4;area(ctx,camera,w,h,b.x-half,b.x+half,b.y-half,b.y+half,'rgba(74,112,146,.14)','rgba(103,167,221,.34)')}
-  for(const b of TURRETS)area(ctx,camera,w,h,b.x-.5,b.x+.5,b.y-.5,b.y+.5,'rgba(182,118,54,.18)','rgba(246,171,88,.5)')
+  for(const b of ARMORIES){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(74,112,146,.14)','rgba(103,167,221,.34)')}
+  for(const b of TURRETS){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(182,118,54,.18)','rgba(246,171,88,.5)')}
   for(const t of towers){area(ctx,camera,w,h,t.x-1,t.x+1,t.y-1,t.y+1,t.id===options.selectedId?'rgba(87,180,255,.3)':'rgba(74,146,210,.18)',t.id===options.selectedId?'#7dd3fc':t.color)}
   const scale=Math.max(.72,Math.min(1.35,camera.zoom*5))
   const fixed=[...ARMORIES,...TURRETS,CAPITAL].sort((a,b)=>b.y-a.y||a.x-b.x)

@@ -37,14 +37,19 @@ export function unproject(sx:number,sy:number,camera:Camera,width:number,height:
 }
 export function clampCoordinate(value:number){return Math.max(MAP_MIN,Math.min(MAP_MAX,Math.round(value)))}
 
-interface Rect{minX:number;maxX:number;minY:number;maxY:number}
+export interface Rect{minX:number;maxX:number;minY:number;maxY:number}
 const footprint=(x:number,y:number,size:number):Rect=>{const half=(size-1)/2;return{minX:x-half,maxX:x+half,minY:y-half,maxY:y+half}}
 const overlaps=(a:Rect,b:Rect)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY
+export function fixedBuildingFootprint(building:FixedBuilding):Rect{
+  if(building.type==='turret')return{minX:building.x-1,maxX:building.x,minY:building.y-1,maxY:building.y}
+  if(building.type==='armory')return footprint(building.x,building.y-2,building.size)
+  return footprint(building.x,building.y,building.size)
+}
 export function validateTowerPosition(x:number,y:number,towers:MapTower[],ignoreId?:string):string|null{
   if(!Number.isInteger(x)||!Number.isInteger(y)||x<1||x>998||y<1||y>998)return'Tower center must stay between X:1–998 and Y:1–998.'
   const area=footprint(x,y,3)
   if(overlaps(area,CAPITAL_BLOCKED))return'This 3×3 area overlaps the Capital no-teleport zone.'
-  for(const building of [...TURRETS,...ARMORIES])if(overlaps(area,footprint(building.x,building.y,building.size)))return`This area overlaps ${building.name}.`
+  for(const building of [...TURRETS,...ARMORIES])if(overlaps(area,fixedBuildingFootprint(building)))return`This area overlaps ${building.name}.`
   for(const tower of towers)if(tower.id!==ignoreId&&overlaps(area,footprint(tower.x,tower.y,3)))return`This area overlaps ${tower.name}.`
   return null
 }
