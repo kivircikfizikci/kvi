@@ -1,0 +1,46 @@
+export type Availability = 'round1' | 'round2' | 'both' | 'unavailable'
+export type RoundId = 1 | 2
+export type FormationId = 1 | 2 | 3
+export type OptimizationMode = 'maximum' | 'balanced'
+
+export interface Player {
+  id: string
+  name: string
+  totalPower: number
+  rallyCapacity: number | null
+  formations: Record<FormationId, { power: number | null; troops: number | null }>
+  availability: Availability
+  participationTime: string
+  allowLeader: boolean
+  priority: number
+  active: boolean
+  notes: string
+}
+
+export interface Assignment { playerId: string; formation: FormationId; locked: boolean }
+export interface Rally {
+  id: string
+  name: string
+  leader: Assignment | null
+  participants: Assignment[]
+}
+export interface RuleConfig {
+  enforceRoundExclusivity: boolean
+  enforceCapacity: boolean
+  enforceAvailability: boolean
+  maxRalliesPerRound: number
+  minimumRallyPower: number | null
+}
+export interface Plan {
+  id: string
+  name: string
+  rounds: Record<RoundId, Rally[]>
+  rules: RuleConfig
+  optimizationMode: OptimizationMode
+  objectiveScore: number
+  createdAt: string
+  updatedAt: string
+}
+export interface ValidationIssue { code: string; message: string; severity: 'error' | 'warning'; playerId?: string; rallyId?: string }
+export interface RallyMetrics { power: number; usedCapacity: number; capacity: number | null; remaining: number | null; utilization: number | null }
+export interface AppExport { version: 1; exportedAt: string; players: Player[]; plans: Plan[] }

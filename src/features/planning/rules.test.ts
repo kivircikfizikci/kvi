@@ -1,0 +1,15 @@
+import { describe, expect, it } from 'vitest'
+import type { Plan, Player, Rally } from '../../types'
+import { rallyMetrics, validateAssignment, validatePlan } from './rules'
+
+const player=(id:string,opts:Partial<Player>={}):Player=>({id,name:id,totalPower:1000,rallyCapacity:500,formations:{1:{power:100,troops:100},2:{power:null,troops:null},3:{power:null,troops:null}},availability:'both',participationTime:'',allowLeader:true,priority:3,active:true,notes:'',...opts})
+const rally=(id:string,leader:string|null,participants:string[]=[]):Rally=>({id,name:id,leader:leader?{playerId:leader,formation:1,locked:false}:null,participants:participants.map(playerId=>({playerId,formation:1,locked:false}))})
+const plan=(round1:Rally[]=[],round2:Rally[]=[]):Plan=>({id:'p',name:'Plan',rounds:{1:round1,2:round2},rules:{enforceRoundExclusivity:true,enforceCapacity:true,enforceAvailability:true,maxRalliesPerRound:3,minimumRallyPower:null},optimizationMode:'maximum',objectiveScore:0,createdAt:'x',updatedAt:'x'})
+
+describe('planning rules',()=>{
+ it('enforces round exclusivity',()=>{const p=plan([rally('a','leader',['member'])],[rally('b','other')]);expect(validateAssignment(p,[player('leader'),player('member'),player('other')],2,'b',{playerId:'member',formation:1,locked:false}).some(i=>i.code==='exclusive')).toBe(true)})
+ it('detects capacity overflow',()=>{const r=rally('a','leader',['one']);const players=[player('leader',{rallyCapacity:150}),player('one'),player('two')];expect(rallyMetrics(r,players).remaining).toBe(50);expect(validateAssignment(plan([r]),players,1,'a',{playerId:'two',formation:1,locked:false}).some(i=>i.code==='capacity')).toBe(true)})
+ it('detects leader and participant conflicts',()=>{const p=plan([rally('a','same',['same'])]);expect(validatePlan(p,[player('same')]).some(i=>i.code==='duplicate')).toBe(true)})
+ it('detects duplicate assignments across rallies',()=>{const p=plan([rally('a','one'),rally('b','two',['one'])]);expect(validatePlan(p,[player('one'),player('two')]).some(i=>i.code==='duplicate')).toBe(true)})
+ it('rejects missing formation and capacity data',()=>{const incomplete=player('incomplete',{rallyCapacity:null,formations:{1:{power:null,troops:null},2:{power:null,troops:null},3:{power:null,troops:null}}});const p=plan([rally('a','incomplete')]);const issues=validatePlan(p,[incomplete]);expect(issues.some(i=>i.code==='formation')).toBe(true);expect(issues.some(i=>i.code==='capacity-missing')).toBe(true)})
+})
