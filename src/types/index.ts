@@ -1,6 +1,6 @@
 export type Availability = 'round1' | 'round2' | 'both' | 'unavailable'
 export type RoundId = 1 | 2
-export type FormationId = 1 | 2 | 3
+export type FormationId = 1 | 2 | 3 | 4
 export type OptimizationMode = 'maximum' | 'balanced'
 
 export interface Player {
@@ -10,7 +10,6 @@ export interface Player {
   rallyCapacity: number | null
   formations: Record<FormationId, { power: number | null; troops: number | null }>
   availability: Availability
-  participationTime: string
   allowLeader: boolean
   priority: number
   active: boolean
@@ -35,6 +34,7 @@ export interface Plan {
   id: string
   name: string
   rounds: Record<RoundId, Rally[]>
+  roundTimes: Record<RoundId, string>
   rules: RuleConfig
   optimizationMode: OptimizationMode
   objectiveScore: number

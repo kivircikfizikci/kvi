@@ -2,7 +2,7 @@ import type { Assignment, FormationId, OptimizationMode, Plan, Player, Rally, Ro
 import { formationReady, rallyMetrics } from '../planning/rules'
 import { now, uid } from '../../utils/format'
 
-const bestFormation=(p:Player):FormationId|null=> ([1,2,3] as FormationId[]).filter(f=>formationReady(p,f)).sort((a,b)=>(p.formations[b].power??0)-(p.formations[a].power??0))[0]??null
+const bestFormation=(p:Player):FormationId|null=> ([1,2,3,4] as FormationId[]).filter(f=>formationReady(p,f)).sort((a,b)=>(p.formations[b].power??0)-(p.formations[a].power??0))[0]??null
 const eligible=(p:Player,r:RoundId)=>p.active && p.availability!=='unavailable' && (p.availability==='both'||p.availability===`round${r}`) && bestFormation(p)!=null
 
 export function optimizePlan(source:Plan, players:Player[], mode:OptimizationMode):Plan {
