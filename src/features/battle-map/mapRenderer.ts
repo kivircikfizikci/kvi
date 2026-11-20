@@ -14,8 +14,7 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   const minX=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.x))-3)),maxX=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.x))+3)),minY=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.y))-3)),maxY=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.y))+3))
   if(camera.zoom>=.1){
     const step=camera.zoom>=.28?1:camera.zoom>=.17?2:5
-    const gridStrength=Math.min(1,Math.max(0,(camera.zoom-.1)/.3))
-    ctx.strokeStyle=`rgba(170,185,204,${.06+gridStrength*.3})`;ctx.lineWidth=camera.zoom>=.55?1.25:1
+    ctx.strokeStyle='rgba(170,185,204,.1)';ctx.lineWidth=camera.zoom>=.55?1.25:1
     const startX=Math.floor(minX/step)*step,startY=Math.floor(minY/step)*step
     for(let x=startX;x<=maxX;x+=step){const a=project({x:x-.5,y:minY-.5},camera,w,h),b=project({x:x-.5,y:maxY+.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
     for(let y=startY;y<=maxY;y+=step){const a=project({x:minX-.5,y:y-.5},camera,w,h),b=project({x:maxX+.5,y:y-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
@@ -27,7 +26,9 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   const scale=Math.max(.72,Math.min(1.35,camera.zoom*5))
   const fixed=[...ARMORIES,...TURRETS,CAPITAL].sort((a,b)=>b.y-a.y||a.x-b.x)
   for(const b of fixed){const p=project(b,camera,w,h);const color=b.type==='capital'?'#d9a52e':b.type==='turret'?'#b76b2d':'#5e7f99';marker(ctx,p.x,p.y,b.type,color,scale);if(camera.zoom>=.045||options.exportMode)roundedLabel(ctx,p.x,p.y+30*scale,b.name,`X:${b.x}  Y:${b.y}`,color)}
-  for(const t of [...towers].sort((a,b)=>b.y-a.y||a.x-b.x)){const p=project(t,camera,w,h),showPawn=camera.zoom>=.12||Boolean(options.exportMode);playerMarker(ctx,p.x,p.y,t.color,scale,showPawn);if(camera.zoom>=.09||options.exportMode)roundedLabel(ctx,p.x,p.y+30*scale,t.name,`X:${t.x}  Y:${t.y}`,t.color)}
+  const sortedTowers=[...towers].sort((a,b)=>b.y-a.y||a.x-b.x),showPlayerDetails=camera.zoom>=.12||Boolean(options.exportMode)
+  for(const t of sortedTowers){const p=project(t,camera,w,h);playerMarker(ctx,p.x,p.y,t.color,scale,showPlayerDetails)}
   if(options.pointer&&camera.zoom>=.2){const p={x:clampCoordinate(options.pointer.x),y:clampCoordinate(options.pointer.y)},s=project(p,camera,w,h),rx=(TILE_WIDTH/2)*camera.zoom,ry=(TILE_HEIGHT/2)*camera.zoom;ctx.strokeStyle='#f5a55a';ctx.lineWidth=2;ctx.strokeRect(s.x-rx,s.y-ry,rx*2,ry*2);ctx.fillStyle='#f6c48e';ctx.font='12px Inter, system-ui';ctx.fillText(`X:${p.x} Y:${p.y}`,s.x+10,s.y-10)}
   ctx.fillStyle='rgba(7,10,15,.78)';ctx.fillRect(12,h-38,255,26);ctx.fillStyle='#c5cfdd';ctx.font='12px Inter, system-ui';ctx.fillText(`Center X:${Math.round(camera.x)} Y:${Math.round(camera.y)}  ·  ${Math.round(camera.zoom*100)}%`,22,h-21)
+  if(showPlayerDetails)for(const t of sortedTowers){const p=project(t,camera,w,h);roundedLabel(ctx,p.x,p.y-16*scale-44,t.name,`X:${t.x}  Y:${t.y}`,t.color)}
 }
