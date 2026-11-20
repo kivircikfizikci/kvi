@@ -37,6 +37,12 @@ export function unproject(sx:number,sy:number,camera:Camera,width:number,height:
 }
 export function clampCoordinate(value:number){return Math.max(MAP_MIN,Math.min(MAP_MAX,Math.round(value)))}
 
+export function towerAtScreenPoint(towers:MapTower[],sx:number,sy:number,camera:Camera,width:number,height:number):MapTower|undefined{
+  const halfWidth=Math.max(22,TILE_WIDTH*camera.zoom*1.5)
+  const halfHeight=Math.max(22,TILE_HEIGHT*camera.zoom*1.5)
+  return [...towers].reverse().find(tower=>{const point=project(tower,camera,width,height);return Math.abs(sx-point.x)<=halfWidth&&Math.abs(sy-point.y)<=halfHeight})
+}
+
 export interface Rect{minX:number;maxX:number;minY:number;maxY:number}
 const footprint=(x:number,y:number,size:number):Rect=>{const half=(size-1)/2;return{minX:x-half,maxX:x+half,minY:y-half,maxY:y+half}}
 const overlaps=(a:Rect,b:Rect)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY

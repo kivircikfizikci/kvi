@@ -1,6 +1,6 @@
 import { describe,expect,it } from 'vitest'
 import type { MapTower } from '../../types'
-import { ARMORIES,CAPITAL,CAPITAL_BLOCKED,fixedBuildingFootprint,project,TILE_HEIGHT,TILE_WIDTH,TURRETS,unproject,validateTowerPosition } from './mapGeometry'
+import { ARMORIES,CAPITAL,CAPITAL_BLOCKED,fixedBuildingFootprint,project,TILE_HEIGHT,TILE_WIDTH,towerAtScreenPoint,TURRETS,unproject,validateTowerPosition } from './mapGeometry'
 
 describe('battle map geometry',()=>{
  it('uses compact 60 by 40 pixel tiles at maximum zoom',()=>{expect({width:TILE_WIDTH,height:TILE_HEIGHT}).toEqual({width:60,height:40})})
@@ -11,4 +11,5 @@ describe('battle map geometry',()=>{
  it('anchors turret footprints to the left and below their top-right coordinate',()=>{expect(fixedBuildingFootprint(TURRETS[0])).toEqual({minX:488,maxX:489,minY:500,maxY:501});expect(validateTowerPosition(487,499,[])).toContain('Turret 1');expect(validateTowerPosition(486,499,[])).toBeNull()})
  it('shifts armory blocked footprints two coordinates downward',()=>{expect(fixedBuildingFootprint(ARMORIES[0])).toEqual({minX:458,maxX:466,minY:454,maxY:462});expect(validateTowerPosition(462,453,[])).toContain('Armory 1');expect(validateTowerPosition(462,464,[])).toBeNull()})
  it('blocks overlapping 3x3 towers',()=>{const tower:MapTower={id:'a',name:'Alpha',x:520,y:520,color:'#60a5fa',createdAt:'x',updatedAt:'x'};expect(validateTowerPosition(522,520,[tower])).toContain('Alpha');expect(validateTowerPosition(524,520,[tower])).toBeNull()})
+ it('keeps player towers easy to grab at distant zoom levels',()=>{const tower:MapTower={id:'a',name:'Alpha',x:520,y:520,color:'#60a5fa',createdAt:'x',updatedAt:'x'},camera={x:520,y:520,zoom:.05};expect(towerAtScreenPoint([tower],621,421,camera,1200,800)?.id).toBe('a');expect(towerAtScreenPoint([tower],623,423,camera,1200,800)).toBeUndefined()})
 })
