@@ -9,4 +9,13 @@ const nullable=(v:string)=>v.trim()===''?null:Number(v)
 export function parsePlayersCsv(text:string):Player[]{const rows=text.replace(/^\uFEFF/,'').split(/\r?\n/).filter(Boolean).map(parseCsvLine);if(rows.length<2)throw new Error('CSV has no player rows.');const h=rows[0];const get=(row:string[],key:string)=>row[h.indexOf(key)]??'';const power=(row:string[],n:number)=>{const millions=get(row,`formation${n}PowerM`);if(millions!=='')return Number(millions)*1_000_000;const legacy=nullable(get(row,`formation${n}Power`));return legacy!=null&&legacy>0&&legacy<1_000_000?legacy*1_000_000:legacy};return rows.slice(1).map(row=>{const name=get(row,'name').trim();if(!name)throw new Error('Every CSV row needs a player name.');const availability=get(row,'availability') as Availability;return{id:get(row,'id')||uid(),name,totalPower:Number(get(row,'totalPower'))||0,rallyCapacity:nullable(get(row,'rallyCapacity')),formations:{1:{power:power(row,1)},2:{power:power(row,2)},3:{power:power(row,3)},4:{power:power(row,4)}},availability:['both','round1','round2','unavailable'].includes(availability)?availability:'unavailable',allowLeader:get(row,'allowLeader')!=='false',priority:Number(get(row,'priority'))||3,active:get(row,'active')!=='false',notes:get(row,'notes')}})}
 export function exportBundle(data:AppExport){downloadFile('frankenstein-plans.json',JSON.stringify(data,null,2),'application/json')}
 export function parseBundle(text:string):AppExport{const data=JSON.parse(text) as AppExport;if(data.version!==1||!Array.isArray(data.players)||!Array.isArray(data.plans)||data.plans.length===0)throw new Error('Unsupported or invalid plan file.');const ids=new Set<string>();for(const p of data.players){if(!p.id||!p.name)throw new Error('Invalid player record.');if(ids.has(p.id))p.id=uid();ids.add(p.id)}return data}
-export async function exportBoardPng(node:HTMLElement,name:string){const data=await toPng(node,{backgroundColor:'#090c12',pixelRatio:2,cacheBust:true});const a=document.createElement('a');a.download=`${name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-rallies.png`;a.href=data;a.click()}
+export async function exportBoardPng(node:HTMLElement,name:string){
+  const capture=node.cloneNode(true) as HTMLElement
+  Object.assign(capture.style,{position:'absolute',left:'0',top:'0',zIndex:'-1',width:'1400px',height:'auto',minHeight:'800px',visibility:'visible'})
+  document.body.appendChild(capture)
+  try{
+    await document.fonts?.ready
+    const data=await toPng(capture,{backgroundColor:'#090c12',pixelRatio:2,cacheBust:true,width:capture.scrollWidth,height:capture.scrollHeight,style:{position:'static',left:'0',top:'0',visibility:'visible'}})
+    const a=document.createElement('a');a.download=`${name.replace(/[^a-z0-9]+/gi,'-').toLowerCase()}-rallies.png`;a.href=data;a.click()
+  }finally{capture.remove()}
+}

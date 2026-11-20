@@ -30,18 +30,28 @@ export function validateAssignment(plan: Plan, players: Player[], round: RoundId
   if (asLeader && !player.allowLeader) issues.push({code:'leader',message:`${player.name} cannot lead rallies.`,severity:'error',playerId:player.id})
   const otherRound: RoundId = round===1?2:1
   if (plan.rules.enforceRoundExclusivity && plan.rounds[otherRound].some(r=>r.leader?.playerId===player.id||r.participants.some(a=>a.playerId===player.id))) issues.push({code:'exclusive',message:`${player.name} is already assigned to Round ${otherRound}.`,severity:'error',playerId:player.id})
-  const sameRound = plan.rounds[round].some(r=>r.leader?.playerId===player.id||r.participants.some(a=>a.playerId===player.id))
-  if (sameRound) issues.push({code:'duplicate',message:`${player.name} is already assigned in Round ${round}.`,severity:'error',playerId:player.id})
+  const leaderRallies=plan.rounds[round].filter(r=>r.leader?.playerId===player.id)
+  const participantRallies=plan.rounds[round].filter(r=>r.participants.some(a=>a.playerId===player.id))
+  if(asLeader){
+    if(participantRallies.length)issues.push({code:'leader-participant-conflict',message:`${player.name} is already a participant in Round ${round}.`,severity:'error',playerId:player.id})
+    const alreadyLeadsTarget=rally.leader?.playerId===player.id
+    if(!alreadyLeadsTarget&&leaderRallies.length>=4)issues.push({code:'leader-limit',message:`${player.name} already leads 4 rallies in Round ${round}.`,severity:'error',playerId:player.id})
+  }else{
+    if(leaderRallies.length||participantRallies.length)issues.push({code:'duplicate',message:`${player.name} is already assigned in Round ${round}.`,severity:'error',playerId:player.id})
+    if(rally.participants.length>=12)issues.push({code:'participant-limit',message:`${rally.name} already has the maximum 12 participants.`,severity:'error',rallyId})
+  }
   // Capacity enforcement is paused while participant troop counts are not tracked.
   return issues
 }
 export function validatePlan(plan: Plan, players: Player[]): ValidationIssue[] {
-  const issues:ValidationIssue[]=[]; const global=new Map<string,RoundId>(); const occurrences=new Map<string,number>()
+  const issues:ValidationIssue[]=[]; const global=new Map<string,RoundId>()
   for (const round of [1,2] as RoundId[]) for (const rally of plan.rounds[round]) {
     if (!rally.leader) issues.push({code:'leader-missing',message:`${rally.name} needs a leader.`,severity:'warning',rallyId:rally.id})
     const members=[...(rally.leader?[rally.leader]:[]),...rally.participants]
-    for(const a of members){ const p=players.find(x=>x.id===a.playerId); if(!p) continue; const key=`${round}-${p.id}`;const count=(occurrences.get(key)??0)+1;occurrences.set(key,count);if(count>1)issues.push({code:'duplicate',message:`${p.name} is assigned more than once in Round ${round}.`,severity:'error',playerId:p.id}); const prev=global.get(p.id); if(prev && prev!==round && plan.rules.enforceRoundExclusivity) issues.push({code:'exclusive',message:`${p.name} appears in both rounds.`,severity:'error',playerId:p.id}); else global.set(p.id,round); if(!formationReady(p,a.formation)) issues.push({code:'formation',message:`${p.name} has incomplete Formation ${a.formation}.`,severity:'error',playerId:p.id}) }
+    for(const a of members){ const p=players.find(x=>x.id===a.playerId); if(!p) continue; const prev=global.get(p.id); if(prev && prev!==round && plan.rules.enforceRoundExclusivity) issues.push({code:'exclusive',message:`${p.name} appears in both rounds.`,severity:'error',playerId:p.id}); else global.set(p.id,round); if(!formationReady(p,a.formation)) issues.push({code:'formation',message:`${p.name} has incomplete Formation ${a.formation}.`,severity:'error',playerId:p.id}) }
+    if(rally.participants.length>12)issues.push({code:'participant-limit',message:`${rally.name} has more than 12 participants.`,severity:'error',rallyId:rally.id})
     const m=rallyMetrics(rally,players); if(m.capacity==null&&rally.leader) issues.push({code:'capacity-missing',message:`${rally.name} leader has no rally capacity.`,severity:'warning',rallyId:rally.id});if(plan.rules.minimumRallyPower!=null&&m.power<plan.rules.minimumRallyPower)issues.push({code:'minimum-power',message:`${rally.name} is below the configured minimum power.`,severity:'warning',rallyId:rally.id})
   }
+  for(const round of [1,2] as RoundId[])for(const player of players){const leaderCount=plan.rounds[round].filter(r=>r.leader?.playerId===player.id).length;const participantCount=plan.rounds[round].filter(r=>r.participants.some(a=>a.playerId===player.id)).length;if(leaderCount>4)issues.push({code:'leader-limit',message:`${player.name} leads more than 4 rallies in Round ${round}.`,severity:'error',playerId:player.id});if(participantCount>1)issues.push({code:'duplicate',message:`${player.name} participates in more than one rally in Round ${round}.`,severity:'error',playerId:player.id});if(leaderCount&&participantCount)issues.push({code:'leader-participant-conflict',message:`${player.name} is both leader and participant in Round ${round}.`,severity:'error',playerId:player.id})}
   return issues
 }
