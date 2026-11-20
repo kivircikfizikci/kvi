@@ -2,9 +2,10 @@ import { NativeSelect } from '../../components/ui'
 import { usePlannerStore } from '../../store/usePlannerStore'
 import { formatPower } from '../../utils/format'
 
-export function PlayerSelect({ value, onChange, label = 'Alliance player' }: { value: string; onChange: (playerId: string) => void; label?: string }) {
+export function PlayerSelect({ value, onChange, label = 'Alliance player', excludeIds = [] }: { value: string; onChange: (playerId: string) => void; label?: string; excludeIds?: Iterable<string> }) {
   const players = usePlannerStore(state => state.players)
-  const options = [...players].filter(player => player.active).sort((a, b) => b.totalPower - a.totalPower || a.name.localeCompare(b.name))
+  const excluded = new Set(excludeIds)
+  const options = [...players].filter(player => !excluded.has(player.id) || player.id === value).sort((a, b) => b.totalPower - a.totalPower || a.name.localeCompare(b.name))
 
   return <label>{label}<NativeSelect value={value} onChange={event => onChange(event.target.value)}>
     <option value="">Custom / unlinked tower</option>
