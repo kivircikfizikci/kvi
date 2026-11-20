@@ -9,6 +9,6 @@ const seedData: [string, number][] = [
 ]
 export const seedPlayers = (): Player[] => seedData.map(([name,totalPower], index) => ({
   id: `seed-${index + 1}`, name, totalPower, rallyCapacity: null,
-  formations: { 1:{power:null,troops:null},2:{power:null,troops:null},3:{power:null,troops:null},4:{power:null,troops:null} },
+  formations: { 1:{power:null},2:{power:null},3:{power:null},4:{power:null} },
   availability:'unavailable', allowLeader:true, priority:3, active:true, notes:''
 }))

@@ -12,6 +12,8 @@
 .round-time-controls label { display: flex; align-items: center; gap: 7px; color: #98a4b6; font-size: 0.72rem; }
 .round-time-controls .input { width: 112px; height: 32px; color-scheme: dark; }
 .export-rounds > section > h2 small { margin-left: 8px; color: #ff9a5a; font-size: 14px; font-weight: 700; }
+.formation-table.power-only { grid-template-columns: 40px 1fr; }
+.form-hint { margin: -2px 0 2px; color: #7f8b9d; font-size: 0.7rem; line-height: 1.4; }
 
 @media (max-width: 600px) {
   .round-time-controls { display: grid; grid-template-columns: auto 1fr; gap: 8px; }

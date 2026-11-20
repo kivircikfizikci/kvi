@@ -8,7 +8,7 @@ export interface Player {
   name: string
   totalPower: number
   rallyCapacity: number | null
-  formations: Record<FormationId, { power: number | null; troops: number | null }>
+  formations: Record<FormationId, { power: number | null }>
   availability: Availability
   allowLeader: boolean
   priority: number
@@ -42,5 +42,5 @@ export interface Plan {
   updatedAt: string
 }
 export interface ValidationIssue { code: string; message: string; severity: 'error' | 'warning'; playerId?: string; rallyId?: string }
-export interface RallyMetrics { power: number; usedCapacity: number; capacity: number | null; remaining: number | null; utilization: number | null }
+export interface RallyMetrics { power: number; capacity: number | null }
 export interface AppExport { version: 1; exportedAt: string; players: Player[]; plans: Plan[] }
