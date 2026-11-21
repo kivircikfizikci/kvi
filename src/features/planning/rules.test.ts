@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Plan, Player, Rally } from '../../types'
 import { rallyMetrics, validateAssignment, validatePlan } from './rules'
 
-const player=(id:string,opts:Partial<Player>={}):Player=>({id,name:id,totalPower:1000,rallyCapacity:500,formations:{1:{power:100},2:{power:null},3:{power:null},4:{power:null}},availability:'both',allowLeader:true,priority:3,active:true,notes:'',...opts})
+const player=(id:string,opts:Partial<Player>={}):Player=>({id,name:id,totalPower:1000,rallyCapacity:500,formations:{1:{power:100},2:{power:null},3:{power:null},4:{power:null}},availability:'both',allowLeader:true,active:true,notes:'',...opts})
 const rally=(id:string,leader:string|null,participants:string[]=[]):Rally=>({id,name:id,leader:leader?{playerId:leader,formation:1,locked:false}:null,participants:participants.map(playerId=>({playerId,formation:1,locked:false}))})
 const plan=(round1:Rally[]=[],round2:Rally[]=[]):Plan=>({id:'p',name:'Plan',rounds:{1:round1,2:round2},roundTimes:{1:'',2:''},rules:{enforceRoundExclusivity:true,enforceCapacity:true,enforceAvailability:true,maxRalliesPerRound:3,minimumRallyPower:null},optimizationMode:'maximum',objectiveScore:0,createdAt:'x',updatedAt:'x'})
 

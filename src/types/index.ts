@@ -11,7 +11,6 @@ export interface Player {
   formations: Record<FormationId, { power: number | null }>
   availability: Availability
   allowLeader: boolean
-  priority: number
   active: boolean
   notes: string
 }

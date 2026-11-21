@@ -11,7 +11,7 @@ export function optimizePlan(source:Plan, players:Player[], mode:OptimizationMod
     if(rally.leader?.locked) locked.add(rally.leader.playerId); else rally.leader=null
     rally.participants=rally.participants.filter(a=>{if(a.locked){locked.add(a.playerId);return true} return false})
   }
-  const pool=players.filter(p=>!locked.has(p.id)&&bestFormation(p)!=null).sort((a,b)=> mode==='balanced' ? (b.priority-a.priority)||((b.formations[bestFormation(b)!].power??0)-(a.formations[bestFormation(a)!].power??0)) : ((b.formations[bestFormation(b)!].power??0)-(a.formations[bestFormation(a)!].power??0))||(b.priority-a.priority))
+  const pool=players.filter(p=>!locked.has(p.id)&&bestFormation(p)!=null).sort((a,b)=>(b.formations[bestFormation(b)!].power??0)-(a.formations[bestFormation(a)!].power??0))
   const totals:Record<RoundId,number>={1:plan.rounds[1].reduce((sum,r)=>sum+rallyMetrics(r,players).power,0),2:plan.rounds[2].reduce((sum,r)=>sum+rallyMetrics(r,players).power,0)}; const used=new Set(locked)
   const chooseRound=(p:Player):RoundId|null=>{const valid=([1,2] as RoundId[]).filter(r=>eligible(p,r)); if(!valid.length)return null; if(valid.length===1)return valid[0]; return mode==='balanced'?(totals[1]<=totals[2]?1:2):(plan.rounds[1].length<=plan.rounds[2].length?1:2)}
   // Leaders first: capacity matters before raw strength. New groups are created only when a valid leader exists.
