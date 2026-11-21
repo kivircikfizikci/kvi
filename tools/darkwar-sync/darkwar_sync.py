@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import ctypes
 import hashlib
 import json
@@ -203,6 +204,28 @@ def extract_roster(pcap: Path) -> list[dict]:
     raise SyncError("No Alliance CP ranking was found. Start capture, reopen Ranking → CP in the game, then finish the import.")
 
 
+def desktop_directory() -> Path:
+    candidates = []
+    if os.environ.get("OneDrive"):
+        candidates.append(Path(os.environ["OneDrive"]) / "Desktop")
+    candidates.append(Path.home() / "Desktop")
+    return next((path for path in candidates if path.is_dir()), candidates[-1])
+
+
+def save_roster_snapshot(players: list[dict]) -> tuple[Path, Path]:
+    output = desktop_directory() / "KVI Dark War Sync"
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    json_path = output / f"KVI-Roster-{stamp}.json"
+    csv_path = output / f"KVI-Roster-{stamp}.csv"
+    json_path.write_text(json.dumps({"source": "alliance-cp-ranking", "capturedAt": datetime.now(timezone.utc).isoformat(), "players": players}, ensure_ascii=False, indent=2), encoding="utf-8")
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["rank", "name", "power"])
+        writer.writeheader()
+        writer.writerows(players)
+    return json_path, csv_path
+
+
 class CaptureService:
     def __init__(self):
         self.directory = tempfile.TemporaryDirectory(prefix="kvi-darkwar-sync-")
@@ -239,7 +262,9 @@ class CaptureService:
                 self.capturing = False
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
             players = extract_roster(self.pcap)
+            json_path, _csv_path = save_roster_snapshot(players)
             print(f"[COMPLETE] Read {len(players)} ranked players. Closing the helper...", flush=True)
+            print(f"[SAVED] {json_path}", flush=True)
             return players
 
 
@@ -295,7 +320,7 @@ def make_handler(service: CaptureService, token: str):
                     self.send_json(200, {"players": players, "capturedAt": datetime.now(timezone.utc).isoformat(), "source": "alliance-cp-ranking"})
                     self.wfile.flush()
                     def close_after_response():
-                        time.sleep(1.5)
+                        time.sleep(10)
                         self.server.shutdown()
                     threading.Thread(target=close_after_response, daemon=True).start()
                 elif self.path == "/shutdown":

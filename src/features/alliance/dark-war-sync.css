@@ -7,6 +7,7 @@
 .game-sync-ready{border-color:#285440}
 .game-sync .badge svg{width:12px;height:12px}
 .game-sync a.btn{text-decoration:none}
+.game-sync-file{cursor:pointer;margin-top:7px}
 .alliance-ranking .ranking-head,.alliance-ranking .ranking-list article{grid-template-columns:36px minmax(230px,1fr) 100px 125px 58px}
 .alliance-ranking .ranking-list article>.badge{white-space:normal;justify-content:center;text-align:center}
 .sync-spin{animation:sync-spin .8s linear infinite}

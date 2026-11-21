@@ -128,7 +128,10 @@ class SyncWindow:
                     self.set_status("Listening for ranking", "Open Ranking → CP in Dark War now", "#62a5ff")
                 elif message.startswith("[COMPLETE]"):
                     self.set_status("Import complete", "Opening the player matching panel", "#61d095")
-                    self.root.after(2500, self.close_window)
+                    self.root.after(11000, self.close_window)
+                elif message.startswith("[SAVED]"):
+                    path = message.split("]", 1)[-1].strip()
+                    self.log.configure(text=f"Saved roster: {path}")
                 elif message.startswith("[ACTION NEEDED]") or message.startswith("[ERROR]"):
                     self.set_status("Action needed", message.split("]", 1)[-1].strip(), "#ff6b73")
                 elif message.startswith("__EXIT__:"):
