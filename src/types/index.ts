@@ -2,6 +2,7 @@ export type Availability = 'round1' | 'round2' | 'both' | 'unavailable'
 export type RoundId = 1 | 2
 export type FormationId = 1 | 2 | 3 | 4
 export type OptimizationMode = 'maximum' | 'balanced'
+export type AllianceRank = 'R1' | 'R2' | 'R3' | 'R4' | 'R5'
 
 export interface Player {
   id: string
@@ -14,6 +15,7 @@ export interface Player {
   active: boolean
   notes: string
   gameAliases?: string[]
+  allianceRank?: AllianceRank
 }
 
 export interface Assignment { playerId: string; formation: FormationId; locked: boolean }

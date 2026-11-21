@@ -7,6 +7,8 @@
 .game-sync-ready{border-color:#285440}
 .game-sync .badge svg{width:12px;height:12px}
 .game-sync a.btn{text-decoration:none}
+.alliance-ranking .ranking-head,.alliance-ranking .ranking-list article{grid-template-columns:36px minmax(230px,1fr) 100px 125px 58px}
+.alliance-ranking .ranking-list article>.badge{white-space:normal;justify-content:center;text-align:center}
 .sync-spin{animation:sync-spin .8s linear infinite}
 @keyframes sync-spin{to{transform:rotate(360deg)}}
 .sync-review>p{color:var(--muted);margin:0 0 12px;font-size:.76rem;line-height:1.55}
@@ -22,4 +24,4 @@
 .sync-auto-match{color:#70c99a;align-items:center;gap:6px;display:flex}
 .sync-auto-match svg{width:14px;height:14px}
 .sync-review-actions{align-items:center;gap:8px;margin-top:14px;display:flex}.sync-review-actions>span{flex:1}
-@media (width<=720px){.sync-review-head{display:none}.sync-review-list>div{grid-template-columns:42px 1fr 82px}.sync-review-list>div>:last-child{grid-column:1/-1}.sync-review-actions{flex-wrap:wrap}.sync-review-actions>span{display:none}}
+@media (width<=720px){.sync-review-head{display:none}.sync-review-list>div{grid-template-columns:42px 1fr 82px}.sync-review-list>div>:last-child{grid-column:1/-1}.sync-review-actions{flex-wrap:wrap}.sync-review-actions>span{display:none}.alliance-ranking .ranking-list article{grid-template-columns:28px minmax(145px,1fr) 78px 58px}}

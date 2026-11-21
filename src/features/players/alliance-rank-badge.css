@@ -1,0 +1,7 @@
+.alliance-rank-badge{border:1px solid #364457;background:#202936;color:#aab5c4;border-radius:4px;flex:0 0 auto;padding:1px 5px;font-size:.58rem;font-weight:800;line-height:1.35;letter-spacing:.02em}
+.alliance-rank-r5{border-color:#c38b35;background:#382914;color:#ffd177}
+.alliance-rank-r4{border-color:#9c613f;background:#321f18;color:#f6a574}
+.alliance-rank-r3{border-color:#3e6d9d;background:#15283b;color:#80bdf4}
+.alliance-rank-r2{border-color:#53647a;background:#1a2431;color:#b6c4d7}
+.player-title>strong,.alliance-player-name{align-items:center;gap:6px;min-width:0;display:flex!important}
+.member-player-name{align-items:center;gap:5px;display:flex!important}
