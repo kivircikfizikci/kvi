@@ -12,7 +12,9 @@ $python = Join-Path $venv 'Scripts\python.exe'
 try {
   if (-not (Test-Path -LiteralPath $python)) { py -3 -m venv $venv }
   & $python -m pip install --disable-pip-version-check --quiet -r (Join-Path $toolDir 'requirements.txt')
+  if ($LASTEXITCODE -ne 0) { throw 'Unable to install the Dark War Sync requirements.' }
   & $python (Join-Path $toolDir 'darkwar_sync.py') --site-url $SiteUrl
+  if ($LASTEXITCODE -ne 0) { throw 'Dark War Sync could not start. Close any existing helper in Task Manager and try again.' }
 } catch {
   Add-Type -AssemblyName PresentationFramework
   [System.Windows.MessageBox]::Show($_.Exception.Message, 'KVI Dark War Sync') | Out-Null

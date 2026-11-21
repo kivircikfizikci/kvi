@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
 import hashlib
 import json
 import os
@@ -14,6 +15,7 @@ import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import webbrowser
+import urllib.request
 
 from Crypto.Cipher import AES
 import zstandard as zstd
@@ -24,6 +26,9 @@ KEY_MASK = b"apszstdmask2026!"
 MASKED_KEY_DATA_INDEX = 39776
 ZSTD_MAGIC = bytes.fromhex("28b52ffd")
 ALLOWED_ORIGINS = {"https://kivircikfizikci.github.io", "http://localhost:5173", "http://127.0.0.1:5173"}
+STATE_DIRECTORY = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "KVIPlannerSync"
+CONNECTION_FILE = STATE_DIRECTORY / "connection.json"
+MUTEX_NAME = "Local\\KVI-DarkWar-Sync-Helper"
 
 
 class SyncError(RuntimeError):
@@ -286,17 +291,43 @@ def connection_fragment(url: str, token: str) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+def open_planner(site_url: str, url: str, token: str):
+    webbrowser.open(f"{site_url}#dark-war-sync={connection_fragment(url, token)}")
+
+
+def reconnect_existing(site_url: str) -> bool:
+    try:
+        connection = json.loads(CONNECTION_FILE.read_text(encoding="utf-8"))
+        request = urllib.request.Request(f"{connection['url']}/health", headers={"X-KVI-Sync-Token": connection["token"]})
+        with urllib.request.urlopen(request, timeout=1) as response:
+            if response.status != 200:
+                return False
+        open_planner(site_url, connection["url"], connection["token"])
+        return True
+    except Exception:
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Read the visible Dark War Alliance CP ranking for KVI Planner.")
     parser.add_argument("--site-url", default="https://kivircikfizikci.github.io/kvi/")
     parser.add_argument("--port", type=int, default=17616)
     args = parser.parse_args()
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, MUTEX_NAME)
+    if not mutex:
+        raise SyncError("Unable to create the local sync lock.")
+    if ctypes.windll.kernel32.GetLastError() == 183:
+        if reconnect_existing(args.site_url):
+            return
+        raise SyncError("Dark War Sync is already running. End the existing helper from Task Manager and start it again.")
     locate_game_files()
     locate_tshark()
     token, service = secrets.token_urlsafe(32), CaptureService()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(service, token))
-    fragment = connection_fragment(f"http://127.0.0.1:{args.port}", token)
-    webbrowser.open(f"{args.site_url}#dark-war-sync={fragment}")
+    local_url = f"http://127.0.0.1:{args.port}"
+    STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    CONNECTION_FILE.write_text(json.dumps({"url": local_url, "token": token}), encoding="utf-8")
+    open_planner(args.site_url, local_url, token)
     try:
         server.serve_forever()
     finally:
@@ -306,6 +337,13 @@ def main():
             except Exception:
                 pass
         service.directory.cleanup()
+        try:
+            saved = json.loads(CONNECTION_FILE.read_text(encoding="utf-8"))
+            if saved.get("token") == token:
+                CONNECTION_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
+        ctypes.windll.kernel32.CloseHandle(mutex)
 
 
 if __name__ == "__main__":
