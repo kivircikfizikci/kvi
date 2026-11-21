@@ -12,6 +12,7 @@ import struct
 import subprocess
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import webbrowser
@@ -33,6 +34,10 @@ MUTEX_NAME = "Local\\KVI-DarkWar-Sync-Helper"
 
 class SyncError(RuntimeError):
     pass
+
+
+class SyncServer(ThreadingHTTPServer):
+    daemon_threads = True
 
 
 class SfsReader:
@@ -280,7 +285,11 @@ def make_handler(service: CaptureService, token: str):
                 elif self.path == "/capture/finish":
                     players = service.finish()
                     self.send_json(200, {"players": players, "capturedAt": datetime.now(timezone.utc).isoformat(), "source": "alliance-cp-ranking"})
-                    threading.Thread(target=self.server.shutdown, daemon=True).start()
+                    self.wfile.flush()
+                    def close_after_response():
+                        time.sleep(1.5)
+                        self.server.shutdown()
+                    threading.Thread(target=close_after_response, daemon=True).start()
                 else:
                     self.send_json(404, {"error": "Not found."})
             except SyncError as error:
@@ -331,7 +340,7 @@ def main():
     locate_game_files()
     locate_tshark()
     token, service = secrets.token_urlsafe(32), CaptureService()
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(service, token))
+    server = SyncServer(("127.0.0.1", args.port), make_handler(service, token))
     local_url = f"http://127.0.0.1:{args.port}"
     STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
     CONNECTION_FILE.write_text(json.dumps({"url": local_url, "token": token}), encoding="utf-8")
@@ -351,6 +360,7 @@ def main():
                 run(["pktmon", "stop"])
             except Exception:
                 pass
+        server.server_close()
         service.directory.cleanup()
         try:
             saved = json.loads(CONNECTION_FILE.read_text(encoding="utf-8"))
