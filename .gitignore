@@ -1,5 +1,7 @@
 node_modules/
 tools/darkwar-sync/.venv/
+__pycache__/
+*.pyc
 dist/
 *.local
 .DS_Store
