@@ -13,6 +13,7 @@ export interface Player {
   allowLeader: boolean
   active: boolean
   notes: string
+  gameAliases?: string[]
 }
 
 export interface Assignment { playerId: string; formation: FormationId; locked: boolean }
