@@ -1,17 +1,19 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AllianceProfile, MapTower, Plan, Player } from '../types'
+import type { AllianceProfile, MapTower, OfficerNote, Plan, Player } from '../types'
 
 class PlannerDatabase extends Dexie {
   players!: EntityTable<Player, 'id'>
   plans!: EntityTable<Plan, 'id'>
   mapTowers!: EntityTable<MapTower, 'id'>
   allianceProfiles!: EntityTable<AllianceProfile, 'id'>
+  officerNotes!: EntityTable<OfficerNote, 'id'>
   constructor() {
     // Preserve the original storage key so existing browser data survives the product rename.
     super('frankenstein-rally-planner')
     this.version(1).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt' })
     this.version(2).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt' })
     this.version(3).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt' })
+    this.version(4).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt', officerNotes: 'id, status, updatedAt' })
   }
 }
 export const db = new PlannerDatabase()

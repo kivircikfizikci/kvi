@@ -7,13 +7,13 @@ import { optimizePlan } from '../features/optimization/optimizer'
 import { assignedRound, validateAssignment } from '../features/planning/rules'
 import { MAX_PLAYERS } from '../features/players/constants'
 
-const defaultRules:RuleConfig={enforceRoundExclusivity:true,enforceCapacity:true,enforceAvailability:true,maxRalliesPerRound:4,minimumRallyPower:null}
+const defaultRules:RuleConfig={enforceRoundExclusivity:true,enforceCapacity:true,enforceAvailability:true,maxRalliesPerRound:12,minimumRallyPower:null}
 const createPlan=(name='Operation Frankenstein'):Plan=>({id:uid(),name,rounds:{1:[],2:[]},roundTimes:{1:'',2:''},rules:{...defaultRules},optimizationMode:'maximum',objectiveScore:0,createdAt:now(),updatedAt:now()})
 type LegacyPlayer=Player&{participationTime?:string;priority?:number;formations:Record<FormationId,{power:number|null;troops?:number|null}>}
 type LegacyPlan=Plan&{roundTimes?:Record<RoundId,string>}
 const normalizePower=(power:number|null|undefined)=>power!=null&&power>0&&power<1_000_000?power*1_000_000:power??null
 const normalizePlayer=(source:LegacyPlayer):Player=>{const {participationTime:_participationTime,priority:_priority,...player}=source;return{...player,formations:{1:{power:normalizePower(player.formations?.[1]?.power)},2:{power:normalizePower(player.formations?.[2]?.power)},3:{power:normalizePower(player.formations?.[3]?.power)},4:{power:normalizePower(player.formations?.[4]?.power)}}} as Player}
-const normalizePlan=(plan:LegacyPlan):Plan=>({...plan,roundTimes:{1:plan.roundTimes?.[1]??'',2:plan.roundTimes?.[2]??''},rules:{...plan.rules,maxRalliesPerRound:Math.max(4,plan.rules?.maxRalliesPerRound??4)}})
+const normalizePlan=(plan:LegacyPlan):Plan=>({...plan,roundTimes:{1:plan.roundTimes?.[1]??'',2:plan.roundTimes?.[2]??''},rules:{...plan.rules,maxRalliesPerRound:Math.max(12,plan.rules?.maxRalliesPerRound??12)}})
 type Snapshot={players:Player[];plans:Plan[];activePlanId:string}
 interface PlannerState { players:Player[];plans:Plan[];activePlanId:string;loaded:boolean;error:string|null;history:Snapshot[];future:Snapshot[];
   cloudCanEdit:boolean;initialize:()=>Promise<void>; hydrateCloud:(players:Player[],plans:Plan[],activePlanId:string)=>void;setCloudCanEdit:(value:boolean)=>void;setError:(v:string|null)=>void; savePlayer:(p:Player)=>void; deletePlayer:(id:string)=>void; duplicatePlayer:(id:string)=>void; importPlayers:(p:Player[])=>void;

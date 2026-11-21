@@ -24,7 +24,6 @@ export function assignedRound(plan: Plan, playerId: string): RoundId | null {
 export function validateAssignment(plan: Plan, players: Player[], round: RoundId, rallyId: string, assignment: Assignment, asLeader=false): ValidationIssue[] {
   const issues: ValidationIssue[]=[]; const player=players.find(p=>p.id===assignment.playerId); const rally=plan.rounds[round].find(r=>r.id===rallyId)
   if (!player || !rally) return [{code:'missing',message:'Player or rally no longer exists.',severity:'error'}]
-  if (!player.active) issues.push({code:'inactive',message:`${player.name} is inactive.`,severity:'error',playerId:player.id})
   if (plan.rules.enforceAvailability && !(['both',`round${round}`].includes(player.availability))) issues.push({code:'availability',message:`${player.name} is not available for Round ${round}.`,severity:'error',playerId:player.id})
   if (!formationReady(player,assignment.formation)) issues.push({code:'formation',message:`${player.name}'s Formation ${assignment.formation} is incomplete.`,severity:'error',playerId:player.id})
   if (asLeader && !player.allowLeader) issues.push({code:'leader',message:`${player.name} cannot lead rallies.`,severity:'error',playerId:player.id})
