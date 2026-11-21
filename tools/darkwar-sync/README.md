@@ -7,4 +7,6 @@ This optional Windows helper passively reads the Alliance `Ranking → CP` respo
 3. The planner opens and shows **Dark War CP sync · Connected** in Alliance.
 4. Click **Start capture**, open `Alliance → Ranking → CP` in Dark War, then click **Finish & import**.
 
+The administrator console stays visible while the helper is listening and shows its current status. It closes automatically after a successful import. Closing the console manually stops the helper immediately.
+
 Existing players are matched by name and only Total Power is updated. New ranked players are added with empty manual F1–F4 values. Players missing from the top-50 response are never deleted.

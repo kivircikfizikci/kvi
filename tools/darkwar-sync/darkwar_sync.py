@@ -213,6 +213,8 @@ class CaptureService:
                     path.unlink()
             run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "64", "--log-mode", "circular"])
             self.capturing = True
+            print("\n[CAPTURING] Open Alliance Ranking -> CP in Dark War.", flush=True)
+            print("Return to the planner and click Finish & import when the ranking is visible.\n", flush=True)
 
     def finish(self):
         with self.lock:
@@ -223,7 +225,9 @@ class CaptureService:
             finally:
                 self.capturing = False
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            return extract_roster(self.pcap)
+            players = extract_roster(self.pcap)
+            print(f"[COMPLETE] Read {len(players)} ranked players. Closing the helper...", flush=True)
+            return players
 
 
 def make_handler(service: CaptureService, token: str):
@@ -276,11 +280,14 @@ def make_handler(service: CaptureService, token: str):
                 elif self.path == "/capture/finish":
                     players = service.finish()
                     self.send_json(200, {"players": players, "capturedAt": datetime.now(timezone.utc).isoformat(), "source": "alliance-cp-ranking"})
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
                 else:
                     self.send_json(404, {"error": "Not found."})
             except SyncError as error:
+                print(f"[ACTION NEEDED] {error}", flush=True)
                 self.send_json(400, {"error": str(error)})
             except Exception:
+                print("[ERROR] The helper encountered an unexpected error.", flush=True)
                 self.send_json(500, {"error": "The local sync helper encountered an unexpected error."})
 
     return Handler
@@ -313,6 +320,7 @@ def main():
     parser.add_argument("--site-url", default="https://kivircikfizikci.github.io/kvi/")
     parser.add_argument("--port", type=int, default=17616)
     args = parser.parse_args()
+    ctypes.windll.kernel32.SetConsoleTitleW("KVI Dark War Sync")
     mutex = ctypes.windll.kernel32.CreateMutexW(None, False, MUTEX_NAME)
     if not mutex:
         raise SyncError("Unable to create the local sync lock.")
@@ -327,6 +335,13 @@ def main():
     local_url = f"http://127.0.0.1:{args.port}"
     STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
     CONNECTION_FILE.write_text(json.dumps({"url": local_url, "token": token}), encoding="utf-8")
+    print("=" * 52, flush=True)
+    print(" KVI DARK WAR SYNC", flush=True)
+    print("=" * 52, flush=True)
+    print("[READY] Local helper is connected to KVI Planner.", flush=True)
+    print("Keep this window open while syncing.", flush=True)
+    print("It will close automatically after a successful import.", flush=True)
+    print("You can close this window to stop the helper at any time.\n", flush=True)
     open_planner(args.site_url, local_url, token)
     try:
         server.serve_forever()
