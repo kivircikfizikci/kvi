@@ -124,17 +124,63 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return result
 
 
+def pcapng_packets(path: Path):
+    data, offset, endian = path.read_bytes(), 0, "<"
+    while offset + 12 <= len(data):
+        block_type = int.from_bytes(data[offset:offset + 4], "little")
+        if block_type == 0x0A0D0D0A and offset + 12 <= len(data):
+            magic = data[offset + 8:offset + 12]
+            endian = "<" if magic == bytes.fromhex("4d3c2b1a") else ">"
+        block_type = struct.unpack_from(f"{endian}I", data, offset)[0]
+        block_length = struct.unpack_from(f"{endian}I", data, offset + 4)[0]
+        if block_length < 12 or offset + block_length > len(data):
+            break
+        if block_type == 6 and block_length >= 32:
+            captured_length = struct.unpack_from(f"{endian}I", data, offset + 20)[0]
+            packet_start = offset + 28
+            yield data[packet_start:packet_start + captured_length]
+        elif block_type == 3 and block_length >= 16:
+            packet_length = struct.unpack_from(f"{endian}I", data, offset + 8)[0]
+            yield data[offset + 12:offset + 12 + min(packet_length, block_length - 16)]
+        offset += block_length
+
+
+def tcp_segment(packet: bytes):
+    for ip_start in range(min(96, max(0, len(packet) - 20))):
+        version_ihl = packet[ip_start]
+        if version_ihl >> 4 != 4:
+            continue
+        ip_header_length = (version_ihl & 0x0F) * 4
+        if ip_header_length < 20 or ip_start + ip_header_length + 20 > len(packet) or packet[ip_start + 9] != 6:
+            continue
+        total_length = int.from_bytes(packet[ip_start + 2:ip_start + 4], "big")
+        if total_length < ip_header_length + 20 or ip_start + total_length > len(packet):
+            continue
+        tcp_start = ip_start + ip_header_length
+        source_port = int.from_bytes(packet[tcp_start:tcp_start + 2], "big")
+        destination_port = int.from_bytes(packet[tcp_start + 2:tcp_start + 4], "big")
+        if GAME_PORT not in (source_port, destination_port):
+            continue
+        tcp_header_length = (packet[tcp_start + 12] >> 4) * 4
+        if tcp_header_length < 20 or tcp_start + tcp_header_length > ip_start + total_length:
+            continue
+        sequence = int.from_bytes(packet[tcp_start + 4:tcp_start + 8], "big")
+        payload = packet[tcp_start + tcp_header_length:ip_start + total_length]
+        source_ip, destination_ip = packet[ip_start + 12:ip_start + 16], packet[ip_start + 16:ip_start + 20]
+        return source_ip, destination_ip, source_port, destination_port, sequence, payload
+    return None
+
+
 def reassembled_server_streams(pcap: Path) -> list[bytes]:
-    output = run([str(locate_tshark()), "-r", str(pcap), "-Y", f"tcp.srcport=={GAME_PORT} && tcp.len>0", "-T", "fields", "-E", "separator=|", "-e", "tcp.stream", "-e", "tcp.seq", "-e", "tcp.payload"]).stdout
-    grouped: dict[str, list[tuple[int, bytes]]] = {}
-    for line in output.splitlines():
-        parts = line.split("|", 2)
-        if len(parts) != 3 or not all(parts):
+    grouped: dict[tuple[bytes, bytes, int, int], list[tuple[int, bytes]]] = {}
+    for packet in pcapng_packets(pcap):
+        segment = tcp_segment(packet)
+        if not segment:
             continue
-        try:
-            grouped.setdefault(parts[0], []).append((int(parts[1]), bytes.fromhex(parts[2].replace(":", ""))))
-        except ValueError:
+        source_ip, destination_ip, source_port, destination_port, sequence, payload = segment
+        if source_port != GAME_PORT or not payload:
             continue
+        grouped.setdefault((source_ip, destination_ip, source_port, destination_port), []).append((sequence, payload))
     streams = []
     for segments in grouped.values():
         base = min(sequence for sequence, _ in segments)
@@ -201,7 +247,7 @@ def extract_roster(pcap: Path) -> list[dict]:
                         players.append({"name": name, "power": power, "rank": rank})
                 if players:
                     return sorted(players, key=lambda player: player["rank"])
-    raise SyncError("No Alliance CP ranking was found. Start capture, reopen Ranking → CP in the game, then finish the import.")
+    raise SyncError("The game did not send an Alliance CP ranking request during capture. Close the CP ranking screen first, click Start capture, wait for Listening, then reopen Ranking → CP before finishing.")
 
 
 def desktop_directory() -> Path:
@@ -376,7 +422,6 @@ def main():
             return
         raise SyncError("Dark War Sync is already running. End the existing helper from Task Manager and start it again.")
     locate_game_files()
-    locate_tshark()
     token, service = secrets.token_urlsafe(32), CaptureService()
     server = SyncServer(("127.0.0.1", args.port), make_handler(service, token))
     local_url = f"http://127.0.0.1:{args.port}"

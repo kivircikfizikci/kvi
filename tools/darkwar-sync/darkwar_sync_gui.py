@@ -83,7 +83,7 @@ class SyncWindow:
         steps = tk.Frame(body, bg="#090c12")
         steps.pack(fill="x", pady=(20, 8))
         tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
-        for number, text in [("1", "Keep this window open and use Start capture in the Alliance tab."), ("2", "Close and reopen Alliance Ranking → CP in Dark War."), ("3", "Click Finish & import; the player matching panel will open.")]:
+        for number, text in [("1", "Close the CP ranking screen, then click Start capture in the Alliance tab."), ("2", "Wait for Listening, then reopen Alliance Ranking → CP in Dark War."), ("3", "Click Finish & import; the player matching panel will open.")]:
             row = tk.Frame(steps, bg="#090c12")
             row.pack(fill="x", pady=4)
             tk.Label(row, text=number, bg="#202936", fg="#ff9a5a", font=("Segoe UI", 9, "bold"), width=3).pack(side="left")
