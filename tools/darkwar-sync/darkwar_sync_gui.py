@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import tkinter as tk
+from tkinter import ttk
+import urllib.request
+
+import darkwar_sync
+
+
+DEFAULT_SITE = "https://kivircikfizikci.github.io/kvi/"
+
+
+def worker_mode():
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--worker", action="store_true")
+    parser.add_argument("--site-url", default=DEFAULT_SITE)
+    args, remaining = parser.parse_known_args()
+    if not args.worker:
+        return False
+    sys.argv = [sys.argv[0], "--site-url", args.site_url, *remaining]
+    try:
+        darkwar_sync.main()
+    except darkwar_sync.SyncError as error:
+        print(f"[ERROR] {error}", flush=True)
+        raise SystemExit(1)
+    return True
+
+
+class SyncWindow:
+    def __init__(self, site_url: str):
+        self.site_url = site_url
+        self.messages: queue.Queue[str] = queue.Queue()
+        self.process: subprocess.Popen[str] | None = None
+        self.closing = False
+        self.root = tk.Tk()
+        self.root.title("KVI Dark War Sync")
+        self.root.geometry("620x440")
+        self.root.minsize(560, 400)
+        self.root.configure(bg="#090c12")
+        self.root.protocol("WM_DELETE_WINDOW", self.stop)
+        self.build_ui()
+        self.start_worker()
+        self.root.after(100, self.poll_messages)
+
+    def build_ui(self):
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        style.configure("Primary.TButton", background="#f27932", foreground="#17100b", borderwidth=0, padding=(18, 11), font=("Segoe UI", 10, "bold"))
+        style.map("Primary.TButton", background=[("active", "#ff9555")])
+        style.configure("Secondary.TButton", background="#18202c", foreground="#e8edf5", borderwidth=1, padding=(16, 10), font=("Segoe UI", 10))
+        style.map("Secondary.TButton", background=[("active", "#253143")])
+
+        header = tk.Frame(self.root, bg="#10151e", height=82)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        tk.Label(header, text="KVI", bg="#2a170f", fg="#ff9a5a", font=("Segoe UI", 14, "bold"), width=5, height=2).pack(side="left", padx=(22, 14), pady=16)
+        titles = tk.Frame(header, bg="#10151e")
+        titles.pack(side="left", pady=16)
+        tk.Label(titles, text="DARK WAR SYNC", bg="#10151e", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        tk.Label(titles, text="Alliance CP Companion", bg="#10151e", fg="#e8edf5", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+
+        body = tk.Frame(self.root, bg="#090c12")
+        body.pack(fill="both", expand=True, padx=24, pady=20)
+        status_card = tk.Frame(body, bg="#10151e", highlightbackground="#2a3545", highlightthickness=1)
+        status_card.pack(fill="x")
+        self.dot = tk.Label(status_card, text="●", bg="#10151e", fg="#f6bd60", font=("Segoe UI", 18))
+        self.dot.pack(side="left", padx=(18, 12), pady=16)
+        status_text = tk.Frame(status_card, bg="#10151e")
+        status_text.pack(side="left", fill="x", expand=True, pady=14)
+        self.status = tk.Label(status_text, text="Starting helper...", bg="#10151e", fg="#e8edf5", font=("Segoe UI", 12, "bold"))
+        self.status.pack(anchor="w")
+        self.detail = tk.Label(status_text, text="Checking Dark War and local connection", bg="#10151e", fg="#8b96a8", font=("Segoe UI", 9))
+        self.detail.pack(anchor="w", pady=(3, 0))
+
+        steps = tk.Frame(body, bg="#090c12")
+        steps.pack(fill="x", pady=(20, 8))
+        tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
+        for number, text in [("1", "Keep this window open and use Start capture in the Alliance tab."), ("2", "Close and reopen Alliance Ranking → CP in Dark War."), ("3", "Click Finish & import; the player matching panel will open.")]:
+            row = tk.Frame(steps, bg="#090c12")
+            row.pack(fill="x", pady=4)
+            tk.Label(row, text=number, bg="#202936", fg="#ff9a5a", font=("Segoe UI", 9, "bold"), width=3).pack(side="left")
+            tk.Label(row, text=text, bg="#090c12", fg="#c3ccd9", font=("Segoe UI", 9), anchor="w").pack(side="left", padx=10)
+
+        self.log = tk.Label(body, text="", bg="#0d131c", fg="#8b96a8", font=("Consolas", 9), anchor="w", justify="left", padx=12, pady=8)
+        self.log.pack(fill="x", pady=(10, 14))
+        actions = tk.Frame(body, bg="#090c12")
+        actions.pack(fill="x", side="bottom")
+        ttk.Button(actions, text="Stop helper", style="Secondary.TButton", command=self.stop).pack(side="right")
+        ttk.Button(actions, text="Open KVI Planner", style="Primary.TButton", command=self.open_planner).pack(side="right", padx=(0, 10))
+
+    def worker_command(self):
+        if getattr(sys, "frozen", False):
+            return [sys.executable, "--worker", "--site-url", self.site_url]
+        return [sys.executable, str(Path(__file__).with_name("darkwar_sync.py")), "--site-url", self.site_url]
+
+    def start_worker(self):
+        self.process = subprocess.Popen(self.worker_command(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        threading.Thread(target=self.read_output, daemon=True).start()
+
+    def read_output(self):
+        assert self.process and self.process.stdout
+        for line in self.process.stdout:
+            if line.strip():
+                self.messages.put(line.strip())
+        code = self.process.wait()
+        self.messages.put(f"__EXIT__:{code}")
+
+    def set_status(self, title: str, detail: str, color: str):
+        self.status.configure(text=title)
+        self.detail.configure(text=detail)
+        self.dot.configure(fg=color)
+
+    def poll_messages(self):
+        try:
+            while True:
+                message = self.messages.get_nowait()
+                if message.startswith("[READY]"):
+                    self.set_status("Connected", "KVI Planner is open and the helper is ready", "#61d095")
+                elif message.startswith("[CAPTURING]"):
+                    self.set_status("Listening for ranking", "Open Ranking → CP in Dark War now", "#62a5ff")
+                elif message.startswith("[COMPLETE]"):
+                    self.set_status("Import complete", "Opening the player matching panel", "#61d095")
+                    self.root.after(2500, self.close_window)
+                elif message.startswith("[ACTION NEEDED]") or message.startswith("[ERROR]"):
+                    self.set_status("Action needed", message.split("]", 1)[-1].strip(), "#ff6b73")
+                elif message.startswith("__EXIT__:"):
+                    code = int(message.split(":", 1)[1])
+                    if code and not self.closing:
+                        self.set_status("Helper stopped", "Review the message above, then start the app again", "#ff6b73")
+                else:
+                    self.log.configure(text=message[:100])
+        except queue.Empty:
+            pass
+        if self.root.winfo_exists():
+            self.root.after(100, self.poll_messages)
+
+    def open_planner(self):
+        if not darkwar_sync.reconnect_existing(self.site_url):
+            self.set_status("Not connected", "Wait a moment and try Open KVI Planner again", "#f6bd60")
+
+    def request_shutdown(self):
+        try:
+            connection = json.loads(darkwar_sync.CONNECTION_FILE.read_text(encoding="utf-8"))
+            request = urllib.request.Request(f"{connection['url']}/shutdown", method="POST", headers={"X-KVI-Sync-Token": connection["token"]})
+            urllib.request.urlopen(request, timeout=3).read()
+        except Exception:
+            if self.process and self.process.poll() is None:
+                self.process.terminate()
+
+    def stop(self):
+        if self.closing:
+            return
+        self.closing = True
+        self.set_status("Stopping...", "Ending local capture safely", "#f6bd60")
+        threading.Thread(target=self.request_shutdown, daemon=True).start()
+        self.root.after(1200, self.close_window)
+
+    def close_window(self):
+        if self.root.winfo_exists():
+            self.root.destroy()
+
+    def run(self):
+        self.root.mainloop()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="KVI Dark War Sync desktop companion")
+    parser.add_argument("--site-url", default=DEFAULT_SITE)
+    args = parser.parse_args()
+    SyncWindow(args.site_url).run()
+
+
+if __name__ == "__main__":
+    if not worker_mode():
+        main()

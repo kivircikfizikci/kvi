@@ -221,6 +221,14 @@ class CaptureService:
             print("\n[CAPTURING] Open Alliance Ranking -> CP in Dark War.", flush=True)
             print("Return to the planner and click Finish & import when the ranking is visible.\n", flush=True)
 
+    def stop(self):
+        with self.lock:
+            if self.capturing:
+                try:
+                    run(["pktmon", "stop"])
+                finally:
+                    self.capturing = False
+
     def finish(self):
         with self.lock:
             if not self.capturing:
@@ -290,6 +298,11 @@ def make_handler(service: CaptureService, token: str):
                         time.sleep(1.5)
                         self.server.shutdown()
                     threading.Thread(target=close_after_response, daemon=True).start()
+                elif self.path == "/shutdown":
+                    service.stop()
+                    self.send_json(200, {"stopping": True})
+                    self.wfile.flush()
+                    threading.Thread(target=self.server.shutdown, daemon=True).start()
                 else:
                     self.send_json(404, {"error": "Not found."})
             except SyncError as error:
@@ -372,4 +385,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SyncError as error:
+        print(f"[ERROR] {error}", flush=True)
+        raise SystemExit(1)
