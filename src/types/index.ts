@@ -46,4 +46,4 @@ export interface AppExport { version: 1; exportedAt: string; players: Player[]; 
 export interface MapTower { id: string; playerId?: string; name: string; x: number; y: number; color: string; createdAt: string; updatedAt: string }
 export interface AllianceProfile { id: 'primary'; name: string; tag: string; state: string; updatedAt: string }
 export type OfficerNoteStatus = 'requested' | 'planned' | 'done'
-export interface OfficerNote { id: string; title: string; details: string; status: OfficerNoteStatus; createdAt: string; updatedAt: string }
+export interface OfficerNote { id: string; title: string; details: string; status: OfficerNoteStatus; createdBy: string; createdAt: string; updatedAt: string }
