@@ -1,0 +1,11 @@
+.game-sync{border:1px solid #2a3545;background:#0d131c;border-radius:8px;margin:16px;padding:12px}
+.game-sync>header{justify-content:space-between;align-items:center;gap:8px;display:flex}
+.game-sync h3{margin:2px 0;font-size:.82rem}
+.game-sync>p{color:#9ba7b8;margin:10px 0;font-size:.7rem;line-height:1.5}
+.game-sync>small{color:#6f7c8f;margin-top:9px;font-size:.62rem;line-height:1.4;display:block}
+.game-sync-capturing{border-color:#315f91;background:#0d1825}
+.game-sync-ready{border-color:#285440}
+.game-sync .badge svg{width:12px;height:12px}
+.game-sync a.btn{text-decoration:none}
+.sync-spin{animation:sync-spin .8s linear infinite}
+@keyframes sync-spin{to{transform:rotate(360deg)}}

@@ -1,4 +1,4 @@
-import { Database, Pencil, Plus, Search, Shield, Trash2, UsersRound, Zap } from 'lucide-react'
+import { Database, Download, Link2, LoaderCircle, Pencil, Play, Plus, RefreshCw, Search, Shield, Square, Trash2, UsersRound, Zap } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge, Button, Input, NativeSelect } from '../../components/ui'
 import { db } from '../../db'
@@ -6,18 +6,27 @@ import { usePlannerStore } from '../../store/usePlannerStore'
 import type { AllianceProfile, Availability, Player } from '../../types'
 import { formatPower, now } from '../../utils/format'
 import { MAX_PLAYERS } from '../players/constants'
+import { checkDarkWarSync, finishDarkWarCapture, loadDarkWarConnection, startDarkWarCapture, type DarkWarConnection } from './darkWarSync'
 import './alliance.css'
+import './dark-war-sync.css'
 
 const emptyProfile:AllianceProfile={id:'primary',name:'',tag:'',state:'',updatedAt:''}
 
 export function AllianceHub({onEdit,onData,canEdit=true}:{onEdit:(player:Player|null)=>void;onData:()=>void;canEdit?:boolean}){
   const players=usePlannerStore(state=>state.players)
   const deletePlayer=usePlannerStore(state=>state.deletePlayer)
+  const syncGameRoster=usePlannerStore(state=>state.syncGameRoster)
   const [profile,setProfile]=useState<AllianceProfile>(emptyProfile)
   const [query,setQuery]=useState('')
   const [availability,setAvailability]=useState<'all'|Availability>('all')
   const [sort,setSort]=useState<'power'|'name'>('power')
+  const [syncConnection,setSyncConnection]=useState<DarkWarConnection|null>(null)
+  const [syncState,setSyncState]=useState<'disconnected'|'checking'|'ready'|'capturing'|'importing'>('checking')
+  const [syncMessage,setSyncMessage]=useState('Checking the local Dark War helper…')
   useEffect(()=>{void db.allianceProfiles.get('primary').then(saved=>saved&&setProfile(saved))},[])
+  useEffect(()=>{const connection=loadDarkWarConnection();setSyncConnection(connection);if(!connection){setSyncState('disconnected');setSyncMessage('Start the Windows sync helper to connect this browser.');return}void checkDarkWarSync(connection).then(result=>{setSyncState(result.capturing?'capturing':'ready');setSyncMessage(result.capturing?'Capture is running. Open Alliance ranking → CP in Dark War.':'Local helper connected. Formation data is never read.')}).catch(()=>{setSyncState('disconnected');setSyncMessage('The saved helper connection is offline. Start the Windows sync helper again.')})},[])
+  const beginGameSync=async()=>{if(!syncConnection)return;setSyncState('checking');try{await startDarkWarCapture(syncConnection);setSyncState('capturing');setSyncMessage('Now open Alliance ranking → CP in Dark War, then return here and click Finish & import.')}catch(error){setSyncState('ready');setSyncMessage(error instanceof Error?error.message:'Unable to start capture.')}}
+  const finishGameSync=async()=>{if(!syncConnection)return;setSyncState('importing');try{const result=await finishDarkWarCapture(syncConnection);const summary=syncGameRoster(result.players);setSyncState('ready');setSyncMessage(`Read ${result.players.length} ranked players · ${summary.added} added · ${summary.updated} powers updated${summary.skipped?` · ${summary.skipped} skipped at the ${MAX_PLAYERS}-member limit`:''}.`)}catch(error){setSyncState('capturing');setSyncMessage(error instanceof Error?error.message:'Unable to import the ranking.')}}
   const saveProfile=(patch:Partial<AllianceProfile>)=>{if(!canEdit)return;const next={...profile,...patch,updatedAt:now()};setProfile(next);void db.allianceProfiles.put(next).then(()=>window.dispatchEvent(new Event('planner-local-change')))}
   const ranked=useMemo(()=>players
     .filter(player=>player.name.toLowerCase().includes(query.toLowerCase()))
@@ -43,6 +52,7 @@ export function AllianceHub({onEdit,onData,canEdit=true}:{onEdit:(player:Player|
         <label>Alliance name<Input disabled={!canEdit} value={profile.name} onChange={event=>saveProfile({name:event.target.value})} placeholder="Alliance name"/></label>
         <div><label>Tag<Input disabled={!canEdit} value={profile.tag} onChange={event=>saveProfile({tag:event.target.value})} placeholder="KVI" maxLength={8}/></label><label>State<Input disabled={!canEdit} value={profile.state} onChange={event=>saveProfile({state:event.target.value})} placeholder="State number"/></label></div>
         <p className="profile-note">Player information is shared through the alliance cloud workspace and used by every planner module.</p>
+        {canEdit&&<section className={`game-sync game-sync-${syncState}`}><header><div><p className="eyebrow">Game roster</p><h3>Dark War CP sync</h3></div>{syncState==='ready'?<Badge tone="green"><Link2/>Connected</Badge>:syncState==='capturing'?<Badge tone="blue"><RefreshCw/>Capturing</Badge>:<Badge tone="muted">Local helper</Badge>}</header><p>{syncMessage}</p>{syncState==='disconnected'&&<a className="btn btn-secondary wide" href="./downloads/kvi-darkwar-sync.zip" download><Download/>Download Windows helper</a>}{syncState==='ready'&&<Button className="wide" onClick={()=>void beginGameSync()}><Play/>Start capture</Button>}{syncState==='capturing'&&<Button className="wide" onClick={()=>void finishGameSync()}><Square/>Finish & import</Button>}{(syncState==='checking'||syncState==='importing')&&<Button className="wide" disabled><LoaderCircle className="sync-spin"/>{syncState==='importing'?'Reading ranking…':'Connecting…'}</Button>}<small>Imports only player name, CP and ranking order. F1–F4 remain manual.</small></section>}
       </section>
       <section className="alliance-card alliance-ranking">
         <header><div><p className="eyebrow">Player directory</p><h3>Alliance members <span>{ranked.length}/{players.length}</span></h3></div>{canEdit&&<Button disabled={players.length>=MAX_PLAYERS} onClick={()=>onEdit(null)}><Plus/>Add player</Button>}</header>
