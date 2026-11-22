@@ -28,7 +28,7 @@ const rank=(value:unknown):AllianceRank|undefined=>{const normalized=text(value)
 function playerRows(rows:AnyRow[]):GameRosterEntry[]{return rows.map((row,index)=>{
   const explicitAllianceRank=row.allianceRank??row.rankNumber??(row.mainCityLv!=null?row.rank:undefined)
   const sex=number(row.sex)
-  return{uid:text(row.uid)||undefined,name:text(row.name??row.userName),power:number(row.power??row.totalPower),rank:number(row.rankNumber??row.rank??index+1),allianceRank:rank(explicitAllianceRank),mainBuildingLevel:row.mainBuildingLevel!=null?number(row.mainBuildingLevel):row.mainCityLv!=null?number(row.mainCityLv):null,sex:sex===1||sex===2?sex:null,allianceTag:text(row.allianceTag??row.abbr)||undefined,allianceName:text(row.allianceName)||undefined,country:text(row.country)||undefined} as GameRosterEntry
+  return{uid:text(row.uid)||undefined,name:text(row.name??row.userName),power:number(row.power??row.totalPower),totalKills:row.totalKills!=null?number(row.totalKills):row.armyKill!=null?number(row.armyKill):null,rank:number(row.rankNumber??row.rank??index+1),allianceRank:rank(explicitAllianceRank),mainBuildingLevel:row.mainBuildingLevel!=null?number(row.mainBuildingLevel):row.mainCityLv!=null?number(row.mainCityLv):null,sex:sex===1||sex===2?sex:null,allianceTag:text(row.allianceTag??row.abbr)||undefined,allianceName:text(row.allianceName)||undefined,country:text(row.country)||undefined} as GameRosterEntry
  }).filter(row=>row.name&&Number.isFinite(row.power)&&row.power>=0)}
 
 export function parseSavedDarkWarRoster(valueText:string):DarkWarRosterResult{

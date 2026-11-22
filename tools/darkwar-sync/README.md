@@ -14,7 +14,7 @@ Country is stored for future use but is not currently displayed. Gender is game-
 
 1. Run **KVI-DarkWar-Sync.exe**. Windows requests administrator access for passive packet capture.
 2. In the planner Alliance tab, click **Start capture** and wait for **Listening for game data**.
-3. In Dark War, open the Alliance member list, State player power ranking and State alliance power ranking. Wait a few seconds on each screen.
+3. In Dark War, open the Alliance member list, State player kill ranking, State player power ranking and State alliance power ranking. Wait a few seconds on each screen.
 4. Return to the planner and click **Finish & import**.
 5. Review UID matches, then apply the update.
 

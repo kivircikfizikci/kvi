@@ -9,6 +9,7 @@ export interface Player {
   uid?: string
   name: string
   totalPower: number
+  totalKills?: number | null
   rallyCapacity: number | null
   formations: Record<FormationId, { power: number | null }>
   availability: Availability

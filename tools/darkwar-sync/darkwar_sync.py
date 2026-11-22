@@ -313,7 +313,7 @@ def extract_game_data(pcap: Path) -> dict:
                     command, params = envelope.get("c"), envelope.get("p", {})
                     request_id = params.get("_id") if isinstance(params, dict) else None
                     if command and request_id is not None:
-                        requests[request_id] = command
+                        requests[request_id] = (command, params)
                 except Exception:
                     continue
         else:
@@ -328,9 +328,12 @@ def extract_game_data(pcap: Path) -> dict:
                     root = parse_sfs(decode_frame(encrypted, key))
                     payload = root.get("p", {}).get("p", {})
                     request_id = payload.get("_id") if isinstance(payload, dict) else None
-                    command = requests.get(request_id)
+                    request = requests.get(request_id)
+                    command, params = request if request else (None, {})
                     if command in {"al.rank", "server.rank", "alliance.rank"}:
                         responses[command] = payload
+                        if isinstance(params, dict) and params.get("type") is not None:
+                            responses[f"{command}:{params['type']}"] = payload
                 except Exception:
                     continue
     alliance_payload = responses.get("al.rank")
@@ -338,7 +341,7 @@ def extract_game_data(pcap: Path) -> dict:
         raise SyncError("Alliance member data was not captured. Start capture, then reopen the Alliance member/rank list before finishing.")
     country_by_uid = local_country_by_uid()
     alliance_id = str(alliance_payload.get("allianceId") or "")
-    alliance_rank_payload = responses.get("alliance.rank", {})
+    alliance_rank_payload = responses.get("alliance.rank:2") or responses.get("alliance.rank", {})
     alliance_rows = alliance_rank_payload.get("allianceRanking", []) if isinstance(alliance_rank_payload, dict) else []
     own_alliance = next((row for row in alliance_rows if str(row.get("uid")) == alliance_id), {})
     alliance_tag, alliance_name = str(own_alliance.get("abbr") or ""), str(own_alliance.get("alliancename") or "")
@@ -348,13 +351,16 @@ def extract_game_data(pcap: Path) -> dict:
         player_rank = int(row.get("rank") or 1)
         if not player_uid or not row.get("name"):
             continue
-        players.append({"uid": player_uid, "name": str(row["name"]), "power": int(row.get("power") or 0), "rank": player_rank, "allianceRank": f"R{player_rank}", "mainBuildingLevel": int(row.get("mainCityLv") or 0), "sex": int(row.get("sex") or 0), "country": country_by_uid.get(player_uid, ""), "allianceTag": alliance_tag, "allianceName": alliance_name})
+        players.append({"uid": player_uid, "name": str(row["name"]), "power": int(row.get("power") or 0), "totalKills": int(row.get("armyKill") or 0), "rank": player_rank, "allianceRank": f"R{player_rank}", "mainBuildingLevel": int(row.get("mainCityLv") or 0), "sex": int(row.get("sex") or 0), "country": country_by_uid.get(player_uid, ""), "allianceTag": alliance_tag, "allianceName": alliance_name})
     captured_at = datetime.now(timezone.utc).isoformat()
     result = {"source": "dark-war-game-data", "capturedAt": captured_at, "players": players}
-    server_payload = responses.get("server.rank", {})
+    server_payload = responses.get("server.rank:4") or responses.get("server.rank", {})
+    server_kill_payload = responses.get("server.rank:3", {})
     server_rows = server_payload.get("serverRanking", []) if isinstance(server_payload, dict) else []
+    server_kill_rows = server_kill_payload.get("serverRanking", []) if isinstance(server_kill_payload, dict) else []
+    server_kills = {str(row.get("uid") or ""): int(row.get("armyKill") or 0) for row in server_kill_rows}
     if server_rows or alliance_rows:
-        result["stateSnapshot"] = {"id": captured_at, "capturedAt": captured_at, "playerRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("power") or 0), "totalKills": int(row.get("armyKill") or row.get("totalKills") or 0) or None, "sex": int(row.get("sex") or 0) or None, "level": int(row.get("lv") or 0) or None, "allianceName": str(row.get("allianceName") or ""), "allianceTag": str(row.get("abbr") or ""), "country": str(row.get("country") or "")} for row in server_rows], "allianceRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("fightpower") or 0), "leader": str(row.get("leader") or ""), "currentMembers": int(row.get("curMember") or 0), "maxMembers": int(row.get("maxMember") or 0), "country": str(row.get("country") or "")} for row in alliance_rows]}
+        result["stateSnapshot"] = {"id": captured_at, "capturedAt": captured_at, "playerRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("power") or 0), "totalKills": server_kills.get(str(row.get("uid") or "")), "sex": int(row.get("sex") or 0) or None, "level": int(row.get("lv") or 0) or None, "allianceName": str(row.get("allianceName") or ""), "allianceTag": str(row.get("abbr") or ""), "country": str(row.get("country") or "")} for row in server_rows], "allianceRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("fightpower") or 0), "leader": str(row.get("leader") or ""), "currentMembers": int(row.get("curMember") or 0), "maxMembers": int(row.get("maxMember") or 0), "country": str(row.get("country") or "")} for row in alliance_rows]}
     return result
 
 
@@ -387,7 +393,7 @@ def save_game_snapshot(result: dict) -> tuple[Path, Path]:
     json_path = output / f"KVI-Game-Data-{stamp}.json"
     csv_path = output / f"KVI-Alliance-Members-{stamp}.csv"
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    fields = ["uid", "name", "allianceRank", "mainBuildingLevel", "power", "sex", "country", "allianceTag", "allianceName"]
+    fields = ["uid", "name", "allianceRank", "mainBuildingLevel", "power", "totalKills", "sex", "country", "allianceTag", "allianceName"]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
         writer.writeheader()
