@@ -128,10 +128,21 @@ export interface AllianceMemberSnapshot {
   level: number | null;
   allianceRank?: AllianceRank;
 }
+export interface AllianceMembershipChange {
+  id: string;
+  uid: string;
+  name: string;
+  type: "joined" | "left";
+  detectedAt: string;
+  power: number;
+  totalKills: number | null;
+  allianceRank?: AllianceRank;
+}
 export interface StateSnapshot {
   id: string;
   capturedAt: string;
   playerRanking: StatePlayerRanking[];
   allianceRanking: StateAllianceRanking[];
   allianceMembers?: AllianceMemberSnapshot[];
+  membershipChanges?: AllianceMembershipChange[];
 }

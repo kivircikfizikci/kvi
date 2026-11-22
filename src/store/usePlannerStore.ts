@@ -20,7 +20,7 @@ export type GameRosterMatch='new'|'skip'|string
 export const normalizeGameName=(name:string)=>name.normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFE0E\uFE0F\uFEFF]/gu,'').replace(/\s+/gu,' ').trim().toLocaleLowerCase('en-US')
 export const matchedGamePlayer=(players:Player[],name:string,gameUid?:string)=>{if(gameUid){const byUid=players.find(player=>player.uid===gameUid);if(byUid)return byUid}const normalized=normalizeGameName(name);return players.find(player=>normalizeGameName(player.name)===normalized||player.gameAliases?.some(alias=>normalizeGameName(alias)===normalized))}
 interface PlannerState { players:Player[];plans:Plan[];activePlanId:string;loaded:boolean;error:string|null;history:Snapshot[];future:Snapshot[];
-  cloudCanEdit:boolean;initialize:()=>Promise<void>; hydrateCloud:(players:Player[],plans:Plan[],activePlanId:string)=>void;setCloudCanEdit:(value:boolean)=>void;setError:(v:string|null)=>void; savePlayer:(p:Player)=>void; deletePlayer:(id:string)=>void; duplicatePlayer:(id:string)=>void; importPlayers:(p:Player[])=>void;syncGameRoster:(entries:GameRosterEntry[],matches?:Record<string,GameRosterMatch>)=>{added:number;updated:number;skipped:number;aliased:number};
+  cloudCanEdit:boolean;initialize:()=>Promise<void>; hydrateCloud:(players:Player[],plans:Plan[],activePlanId:string)=>void;setCloudCanEdit:(value:boolean)=>void;setError:(v:string|null)=>void; savePlayer:(p:Player)=>void; deletePlayer:(id:string)=>void; archivePlayersByUid:(uids:string[])=>void; duplicatePlayer:(id:string)=>void; importPlayers:(p:Player[])=>void;syncGameRoster:(entries:GameRosterEntry[],matches?:Record<string,GameRosterMatch>)=>{added:number;updated:number;skipped:number;aliased:number};
   setActivePlan:(id:string)=>void; addPlan:()=>void; renamePlan:(id:string,name:string)=>void; duplicatePlan:(id:string)=>void; deletePlan:(id:string)=>void; importBundle:(p:Player[],plans:Plan[])=>void;
   addRally:(round:RoundId)=>void; deleteRally:(round:RoundId,id:string)=>void; reorderRally:(round:RoundId,from:string,to:string)=>void; updateRoundTime:(round:RoundId,time:string)=>void; assign:(round:RoundId,rallyId:string,playerId:string,formation:FormationId,leader?:boolean)=>boolean; removeAssignment:(round:RoundId,rallyId:string,playerId:string)=>void; updateAssignment:(round:RoundId,rallyId:string,playerId:string,patch:Partial<Assignment>)=>void;
   optimize:(mode:OptimizationMode)=>void; resetPlan:()=>void; updateRules:(r:Partial<RuleConfig>)=>void; undo:()=>void;redo:()=>void;saveNow:()=>Promise<void> }
@@ -106,6 +106,31 @@ export const usePlannerStore=create<PlannerState>((set,get)=>{
          },
        })),
      })),
+   archivePlayersByUid: (uids) => {
+     if (!uids.length) return;
+     const departing = new Set(uids);
+     commit((s) => {
+       const ids = new Set(
+         s.players
+           .filter((player) => player.uid && departing.has(player.uid))
+           .map((player) => player.id),
+       );
+       return {
+         players: s.players.filter((player) => !ids.has(player.id)),
+         plans: s.plans.map((plan) => ({
+           ...plan,
+           rounds: {
+             1: plan.rounds[1].map((rally) =>
+               [...ids].reduce((value, id) => strip(value, id), rally),
+             ),
+             2: plan.rounds[2].map((rally) =>
+               [...ids].reduce((value, id) => strip(value, id), rally),
+             ),
+           },
+         })),
+       };
+     });
+   },
    duplicatePlayer: (id) => {
      const p = get().players.find((x) => x.id === id);
      if (!p) return;

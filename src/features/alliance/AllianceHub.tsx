@@ -12,6 +12,8 @@ import {
   TrendingDown,
   TrendingUp,
   Upload,
+  UserMinus,
+  UserPlus,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Input, Modal, NativeSelect } from "../../components/ui";
@@ -86,6 +88,9 @@ export function AllianceHub({
 }) {
   const players = usePlannerStore((state) => state.players);
   const deletePlayer = usePlannerStore((state) => state.deletePlayer);
+  const archivePlayersByUid = usePlannerStore(
+    (state) => state.archivePlayersByUid,
+  );
   const syncGameRoster = usePlannerStore((state) => state.syncGameRoster);
   const [profile, setProfile] = useState<AllianceProfile>(emptyProfile);
   const [snapshots, setSnapshots] = useState<StateSnapshot[]>([]);
@@ -175,6 +180,64 @@ export function AllianceHub({
   };
   const reviewRoster = (result: DarkWarRosterResult) => {
     const entries = result.players;
+    const own = entries.filter(isProfileAlliance);
+    const currentMembers = own
+      .filter((entry) => entry.uid)
+      .map((entry) => ({
+        uid: entry.uid!,
+        name: entry.name,
+        power: entry.power,
+        totalKills: entry.totalKills ?? null,
+        level: entry.mainBuildingLevel ?? null,
+        allianceRank: entry.allianceRank,
+      }));
+    const previousMembers = snapshots[0]?.allianceMembers ?? [];
+    const currentByUid = new Map(
+      currentMembers.map((member) => [member.uid, member]),
+    );
+    const previousMemberByUid = new Map(
+      previousMembers.map((member) => [member.uid, member]),
+    );
+    const reliableRoster =
+      previousMembers.length > 0 &&
+      currentMembers.length >= previousMembers.length * 0.75;
+    const detectedAt = result.stateSnapshot?.capturedAt ?? result.capturedAt;
+    const newChanges = reliableRoster
+      ? [
+          ...currentMembers
+            .filter((member) => !previousMemberByUid.has(member.uid))
+            .map((member) => ({
+              id: `${detectedAt}:joined:${member.uid}`,
+              uid: member.uid,
+              name: member.name,
+              type: "joined" as const,
+              detectedAt,
+              power: member.power,
+              totalKills: member.totalKills,
+              allianceRank: member.allianceRank,
+            })),
+          ...previousMembers
+            .filter((member) => !currentByUid.has(member.uid))
+            .map((member) => ({
+              id: `${detectedAt}:left:${member.uid}`,
+              uid: member.uid,
+              name: member.name,
+              type: "left" as const,
+              detectedAt,
+              power: member.power,
+              totalKills: member.totalKills,
+              allianceRank: member.allianceRank,
+            })),
+        ]
+      : [];
+    const historyCutoff =
+      new Date(detectedAt).getTime() - 90 * 24 * 60 * 60 * 1000;
+    const membershipChanges = [
+      ...(snapshots[0]?.membershipChanges ?? []).filter(
+        (change) => new Date(change.detectedAt).getTime() >= historyCutoff,
+      ),
+      ...newChanges,
+    ].slice(-200);
     setPendingRoster(entries);
     setPendingStateSnapshot({
       ...(result.stateSnapshot ?? {
@@ -183,24 +246,14 @@ export function AllianceHub({
         playerRanking: [],
         allianceRanking: [],
       }),
-      allianceMembers: entries
-        .filter(isProfileAlliance)
-        .filter((entry) => entry.uid)
-        .map((entry) => ({
-          uid: entry.uid!,
-          name: entry.name,
-          power: entry.power,
-          totalKills: entry.totalKills ?? null,
-          level: entry.mainBuildingLevel ?? null,
-          allianceRank: entry.allianceRank,
-        })),
+      allianceMembers: currentMembers,
+      membershipChanges,
     });
     setSyncMatches({});
     onGameDataOpenChange(false);
     setSyncReviewOpen(true);
     setSyncState("ready");
-    const own = entries.filter(isProfileAlliance),
-      exact = own.filter((entry) =>
+    const exact = own.filter((entry) =>
         matchedGamePlayer(players, entry.name, entry.uid),
       ).length;
     setSyncMessage(
@@ -245,6 +298,19 @@ export function AllianceHub({
         (syncMatches[entry.uid ?? entry.name] &&
           syncMatches[entry.uid ?? entry.name] !== "skip"),
     );
+    const previousMembers = snapshots[0]?.allianceMembers ?? [];
+    const currentUids = new Set(
+      (pendingStateSnapshot?.allianceMembers ?? []).map((member) => member.uid),
+    );
+    if (
+      previousMembers.length > 0 &&
+      currentUids.size >= previousMembers.length * 0.75
+    )
+      archivePlayersByUid(
+        previousMembers
+          .filter((member) => !currentUids.has(member.uid))
+          .map((member) => member.uid),
+      );
     const summary = syncGameRoster(selected, syncMatches);
     if (pendingStateSnapshot)
       void db.stateSnapshots
@@ -267,6 +333,39 @@ export function AllianceHub({
     () => new Map(snapshotRows(snapshots[1]).map((row) => [row.uid, row])),
     [snapshots],
   );
+  const latestStateByUid = useMemo(
+    () =>
+      new Map(
+        (snapshots[0]?.playerRanking ?? []).map((row) => [row.uid, row]),
+      ),
+    [snapshots],
+  );
+  const previousStateByUid = useMemo(
+    () =>
+      new Map(
+        (snapshots[1]?.playerRanking ?? []).map((row) => [row.uid, row]),
+      ),
+    [snapshots],
+  );
+  const movementHistory = useMemo(
+    () =>
+      [...(snapshots[0]?.membershipChanges ?? [])].sort(
+        (a, b) =>
+          new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime(),
+      ),
+    [snapshots],
+  );
+  const trackedFormerMembers = useMemo(() => {
+    const latestChange = new Map<
+      string,
+      (typeof movementHistory)[number]
+    >();
+    movementHistory.forEach((change) => {
+      if (!latestChange.has(change.uid)) latestChange.set(change.uid, change);
+    });
+    return [...latestChange.values()].filter((change) => change.type === "left")
+      .length;
+  }, [movementHistory]);
   const killsOf = (player: Player) =>
     player.totalKills ??
     (player.uid
@@ -466,6 +565,86 @@ export function AllianceHub({
             {!ranked.length && (
               <div className="alliance-empty">
                 No players match these filters.
+              </div>
+            )}
+          </div>
+        </section>
+        <section className="alliance-card membership-history">
+          <header>
+            <div>
+              <h3>Alliance movement</h3>
+              <p>
+                Joined and departed members are detected by permanent UID.
+              </p>
+            </div>
+            <Badge tone="amber">{trackedFormerMembers} former tracked</Badge>
+          </header>
+          <div className="membership-history-head">
+            <span>Movement</span>
+            <span>Player</span>
+            <span>Detected</span>
+            <span>Current alliance</span>
+            <span>Power</span>
+            <span>Activity</span>
+          </div>
+          <div className="membership-history-list">
+            {movementHistory.map((change) => {
+              const current = latestStateByUid.get(change.uid);
+              const before = previousStateByUid.get(change.uid);
+              const changed = Boolean(
+                current &&
+                  before &&
+                  (current.power !== before.power ||
+                    current.totalKills !== before.totalKills),
+              );
+              const currentAlliance =
+                change.type === "joined"
+                  ? `[${profile.tag}] ${profile.name}`
+                  : current
+                    ? `${current.allianceTag ? `[${current.allianceTag}] ` : ""}${current.allianceName || "No alliance"}`
+                    : "Not found in State ranking";
+              const activity =
+                change.type === "joined"
+                  ? "Current member"
+                  : !current
+                    ? "Unknown"
+                    : changed
+                      ? "Active"
+                      : before
+                        ? "No recent change"
+                        : "Seen in State";
+              return (
+                <article key={change.id}>
+                  <Badge tone={change.type === "joined" ? "green" : "red"}>
+                    {change.type === "joined" ? <UserPlus /> : <UserMinus />}
+                    {change.type === "joined" ? "Joined" : "Left"}
+                  </Badge>
+                  <strong>{change.name}</strong>
+                  <span>
+                    {new Date(change.detectedAt).toLocaleString("tr-TR", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                  </span>
+                  <span>{currentAlliance}</span>
+                  <strong>{formatPower(current?.power ?? change.power)}</strong>
+                  <Badge
+                    tone={
+                      activity === "Active"
+                        ? "green"
+                        : activity === "Unknown"
+                          ? "muted"
+                          : "blue"
+                    }
+                  >
+                    {activity}
+                  </Badge>
+                </article>
+              );
+            })}
+            {!movementHistory.length && (
+              <div className="membership-history-empty">
+                Movement tracking starts after two complete alliance scans.
               </div>
             )}
           </div>

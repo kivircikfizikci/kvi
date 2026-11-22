@@ -75,6 +75,59 @@
 .alliance-change.neutral {
   color: #748196;
 }
+.membership-history {
+  margin-top: 12px;
+}
+.membership-history > header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.membership-history-head,
+.membership-history-list article {
+  display: grid;
+  grid-template-columns: 105px minmax(150px, 1fr) 135px minmax(190px, 1.15fr) 105px 125px;
+  gap: 12px;
+  align-items: center;
+}
+.membership-history-head {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  color: #6f7c8f;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+.membership-history-list {
+  max-height: 330px;
+  overflow: auto;
+}
+.membership-history-list article {
+  min-height: 58px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #202936;
+  font-size: 0.78rem;
+}
+.membership-history-list article:last-child {
+  border-bottom: 0;
+}
+.membership-history-list article:hover {
+  background: #121a25;
+}
+.membership-history-list .badge {
+  width: max-content;
+  white-space: nowrap;
+}
+.membership-history-list .badge svg {
+  width: 13px;
+  height: 13px;
+}
+.membership-history-empty {
+  padding: 28px 14px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.8rem;
+}
 
 @media (min-width: 721px) {
   .alliance-card.alliance-ranking .ranking-head,
@@ -118,5 +171,15 @@
   .alliance-ranking .ranking-actions {
     grid-column: 5;
     grid-row: 1;
+  }
+  .membership-history {
+    overflow: hidden;
+  }
+  .membership-history-head,
+  .membership-history-list article {
+    min-width: 720px;
+  }
+  .membership-history-list {
+    overflow: auto;
   }
 }
