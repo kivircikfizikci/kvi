@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import struct
 import subprocess
 import tempfile
@@ -195,6 +196,30 @@ def reassembled_server_streams(pcap: Path) -> list[bytes]:
     return streams
 
 
+def reassembled_directional_streams(pcap: Path):
+    grouped = {}
+    for packet in pcapng_packets(pcap):
+        segment = tcp_segment(packet)
+        if not segment:
+            continue
+        source_ip, destination_ip, source_port, destination_port, sequence, payload = segment
+        if GAME_PORT not in (source_port, destination_port) or not payload:
+            continue
+        grouped.setdefault((source_ip, destination_ip, source_port, destination_port), []).append((sequence, payload))
+    streams = []
+    for key, segments in grouped.items():
+        base = min(sequence for sequence, _ in segments)
+        end = max(sequence - base + len(payload) for sequence, payload in segments)
+        data, covered = bytearray(end), bytearray(end)
+        for sequence, payload in sorted(segments):
+            start = sequence - base
+            for index, value in enumerate(payload):
+                if not covered[start + index]:
+                    data[start + index], covered[start + index] = value, 1
+        streams.append((key, bytes(data)))
+    return streams
+
+
 def decode_frame(payload: bytes, key: bytes) -> bytes:
     transformed, nonce = bytearray(payload), payload[:8]
     aes, prefix_size = AES.new(key, AES.MODE_ECB), min(128, len(payload) - 8)
@@ -244,10 +269,93 @@ def extract_roster(pcap: Path) -> list[dict]:
                 for row in rows:
                     name, power, rank = str(row["name"]).strip(), int(row["score"]), int(row["rank"])
                     if name and power >= 0 and 1 <= rank <= 100:
-                        players.append({"name": name, "power": power, "rank": rank})
+                        players.append({"name": name, "power": power, "rank": rank, "allianceTag": str(row.get("abbr") or ""), "allianceName": str(row.get("allianceName") or ""), "country": row.get("country")})
                 if players:
                     return sorted(players, key=lambda player: player["rank"])
     raise SyncError("The game did not send an Alliance CP ranking request during capture. Close the CP ranking screen first, click Start capture, wait for Listening, then reopen Ranking → CP before finishing.")
+
+
+def parse_sfs(body: bytes):
+    reader = SfsReader(body)
+    value = reader.value(reader.unpack(">B"))
+    if reader.offset != len(body):
+        raise SyncError("Unexpected trailing game data.")
+    return value
+
+
+def local_country_by_uid() -> dict[str, str]:
+    database = Path(os.environ.get("USERPROFILE", "")) / "AppData" / "LocalLow" / "READYGO" / "DarkWar" / "config.db"
+    if not database.is_file():
+        return {}
+    try:
+        with sqlite3.connect(database) as connection:
+            return {str(uid): str(nation or "") for uid, nation in connection.execute("select uid,nation from UserInfoData")}
+    except sqlite3.Error:
+        return {}
+
+
+def extract_game_data(pcap: Path) -> dict:
+    requests = {}
+    responses = {}
+    key = codec_key()
+    for stream_key, stream in reassembled_directional_streams(pcap):
+        if stream_key[2] != GAME_PORT:
+            for index, marker in enumerate(stream):
+                if marker != 0x80 or index + 3 > len(stream):
+                    continue
+                length = int.from_bytes(stream[index + 1:index + 3], "big")
+                body = stream[index + 3:index + 3 + length]
+                if not length or len(body) != length:
+                    continue
+                try:
+                    root = parse_sfs(body)
+                    envelope = root.get("p", {})
+                    command, params = envelope.get("c"), envelope.get("p", {})
+                    request_id = params.get("_id") if isinstance(params, dict) else None
+                    if command and request_id is not None:
+                        requests[request_id] = command
+                except Exception:
+                    continue
+        else:
+            for index, marker in enumerate(stream):
+                if marker != 0xA0 or index + 3 > len(stream):
+                    continue
+                length = int.from_bytes(stream[index + 1:index + 3], "big")
+                encrypted = stream[index + 3:index + 3 + length]
+                if length < 12 or len(encrypted) != length:
+                    continue
+                try:
+                    root = parse_sfs(decode_frame(encrypted, key))
+                    payload = root.get("p", {}).get("p", {})
+                    request_id = payload.get("_id") if isinstance(payload, dict) else None
+                    command = requests.get(request_id)
+                    if command in {"al.rank", "server.rank", "alliance.rank"}:
+                        responses[command] = payload
+                except Exception:
+                    continue
+    alliance_payload = responses.get("al.rank")
+    if not alliance_payload or not isinstance(alliance_payload.get("list"), list):
+        raise SyncError("Alliance member data was not captured. Start capture, then reopen the Alliance member/rank list before finishing.")
+    country_by_uid = local_country_by_uid()
+    alliance_id = str(alliance_payload.get("allianceId") or "")
+    alliance_rank_payload = responses.get("alliance.rank", {})
+    alliance_rows = alliance_rank_payload.get("allianceRanking", []) if isinstance(alliance_rank_payload, dict) else []
+    own_alliance = next((row for row in alliance_rows if str(row.get("uid")) == alliance_id), {})
+    alliance_tag, alliance_name = str(own_alliance.get("abbr") or ""), str(own_alliance.get("alliancename") or "")
+    players = []
+    for row in alliance_payload["list"]:
+        player_uid = str(row.get("uid") or "")
+        player_rank = int(row.get("rank") or 1)
+        if not player_uid or not row.get("name"):
+            continue
+        players.append({"uid": player_uid, "name": str(row["name"]), "power": int(row.get("power") or 0), "rank": player_rank, "allianceRank": f"R{player_rank}", "mainBuildingLevel": int(row.get("mainCityLv") or 0), "sex": int(row.get("sex") or 0), "country": country_by_uid.get(player_uid, ""), "allianceTag": alliance_tag, "allianceName": alliance_name})
+    captured_at = datetime.now(timezone.utc).isoformat()
+    result = {"source": "dark-war-game-data", "capturedAt": captured_at, "players": players}
+    server_payload = responses.get("server.rank", {})
+    server_rows = server_payload.get("serverRanking", []) if isinstance(server_payload, dict) else []
+    if server_rows or alliance_rows:
+        result["stateSnapshot"] = {"id": captured_at, "capturedAt": captured_at, "playerRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("power") or 0), "level": int(row.get("lv") or 0) or None, "allianceName": str(row.get("allianceName") or ""), "allianceTag": str(row.get("abbr") or ""), "country": str(row.get("country") or "")} for row in server_rows], "allianceRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("fightpower") or 0), "leader": str(row.get("leader") or ""), "currentMembers": int(row.get("curMember") or 0), "maxMembers": int(row.get("maxMember") or 0), "country": str(row.get("country") or "")} for row in alliance_rows]}
+    return result
 
 
 def desktop_directory() -> Path:
@@ -266,9 +374,24 @@ def save_roster_snapshot(players: list[dict]) -> tuple[Path, Path]:
     csv_path = output / f"KVI-Roster-{stamp}.csv"
     json_path.write_text(json.dumps({"source": "alliance-cp-ranking", "capturedAt": datetime.now(timezone.utc).isoformat(), "players": players}, ensure_ascii=False, indent=2), encoding="utf-8")
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["rank", "name", "power"])
+        writer = csv.DictWriter(handle, fieldnames=["rank", "name", "power", "allianceTag", "allianceName", "country"])
         writer.writeheader()
         writer.writerows(players)
+    return json_path, csv_path
+
+
+def save_game_snapshot(result: dict) -> tuple[Path, Path]:
+    output = desktop_directory() / "KVI Dark War Sync"
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    json_path = output / f"KVI-Game-Data-{stamp}.json"
+    csv_path = output / f"KVI-Alliance-Members-{stamp}.csv"
+    json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    fields = ["uid", "name", "allianceRank", "mainBuildingLevel", "power", "sex", "country", "allianceTag", "allianceName"]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(result["players"])
     return json_path, csv_path
 
 
@@ -285,10 +408,10 @@ class CaptureService:
             for path in (self.etl, self.pcap):
                 if path.exists():
                     path.unlink()
-            run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "64", "--log-mode", "circular"])
+            run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
             self.capturing = True
-            print("\n[CAPTURING] Open Alliance Ranking -> CP in Dark War.", flush=True)
-            print("Return to the planner and click Finish & import when the ranking is visible.\n", flush=True)
+            print("\n[CAPTURING] Open Alliance members, State player power and State alliance power screens.", flush=True)
+            print("Return to the planner and click Finish & import after all three screens have loaded.\n", flush=True)
 
     def stop(self):
         with self.lock:
@@ -307,11 +430,12 @@ class CaptureService:
             finally:
                 self.capturing = False
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            players = extract_roster(self.pcap)
-            json_path, _csv_path = save_roster_snapshot(players)
-            print(f"[COMPLETE] Read {len(players)} ranked players. Closing the helper...", flush=True)
+            result = extract_game_data(self.pcap)
+            json_path, _csv_path = save_game_snapshot(result)
+            state = result.get("stateSnapshot", {})
+            print(f"[COMPLETE] Read {len(result['players'])} alliance members, {len(state.get('playerRanking', []))} state players and {len(state.get('allianceRanking', []))} alliances. Closing the helper...", flush=True)
             print(f"[SAVED] {json_path}", flush=True)
-            return players
+            return result
 
 
 def make_handler(service: CaptureService, token: str):
@@ -362,8 +486,8 @@ def make_handler(service: CaptureService, token: str):
                     service.start()
                     self.send_json(200, {"capturing": True})
                 elif self.path == "/capture/finish":
-                    players = service.finish()
-                    self.send_json(200, {"players": players, "capturedAt": datetime.now(timezone.utc).isoformat(), "source": "alliance-cp-ranking"})
+                    result = service.finish()
+                    self.send_json(200, result)
                     self.wfile.flush()
                     def close_after_response():
                         time.sleep(10)
@@ -409,7 +533,7 @@ def reconnect_existing(site_url: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Read the visible Dark War Alliance CP ranking for KVI Planner.")
+    parser = argparse.ArgumentParser(description="Read visible Dark War alliance and state ranking data for KVI Planner.")
     parser.add_argument("--site-url", default="https://kivircikfizikci.github.io/kvi/")
     parser.add_argument("--port", type=int, default=17616)
     args = parser.parse_args()

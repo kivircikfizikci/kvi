@@ -1,0 +1,2 @@
+.player-sex{width:13px;height:13px;flex:none;stroke-width:2.4}.player-sex-male{color:#65aaff}.player-sex-female{color:#f28ab8}
+.game-managed-field{border:1px solid #293543;background:#0d141d;border-radius:6px;display:grid;grid-template-columns:1fr auto;gap:3px 8px;padding:9px 10px}.game-managed-field>span{color:#9ba7b8;font-size:.72rem}.game-managed-field>strong{display:flex;align-items:center;gap:5px;font-size:.75rem}.game-managed-field>small{grid-column:1/-1;color:#68768a;font-size:.62rem}

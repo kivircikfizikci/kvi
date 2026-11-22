@@ -8,13 +8,14 @@ import { formatPower } from '../../utils/format'
 import { MAX_PLAYERS } from './constants'
 import { AllianceRankBadge, playerAllianceRank } from './AllianceRankBadge'
 import { frankyParticipationLabel } from './availability'
+import { PlayerSexIcon } from './PlayerSexIcon'
 
 function PlayerCard({player,onEdit}:{player:Player;onEdit:(p:Player)=>void}){
  const assigned=usePlannerStore(s=>isAssigned(s,player.id));const canEdit=usePlannerStore(s=>s.cloudCanEdit);const duplicate=usePlannerStore(s=>s.duplicatePlayer);const del=usePlannerStore(s=>s.deletePlayer);const atLimit=usePlannerStore(s=>s.players.length>=MAX_PLAYERS)
  const {attributes,listeners,setNodeRef,isDragging}=useDraggable({id:`player-${player.id}`,disabled:!canEdit,data:{type:'player',playerId:player.id}})
  return <article ref={setNodeRef} className={`player-card ${isDragging?'dragging':''} ${canEdit?'':'read-only'}`}>
   {canEdit&&<button className="drag-handle" {...listeners} {...attributes} aria-label={`Drag ${player.name}`}><GripVertical size={17}/></button>}
-  <button className="player-main" onClick={()=>canEdit&&onEdit(player)}><span className="player-title"><strong><AllianceRankBadge rank={playerAllianceRank(player)}/>{player.name}</strong><span>{formatPower(player.totalPower)}</span></span><span className="formation-pills">{([1,2,3,4] as const).map(f=><span key={f}>F{f} {formatPower(player.formations[f].power)}</span>)}</span><span className="player-meta">Capacity {formatPower(player.rallyCapacity)} · {frankyParticipationLabel(player.availability)}</span></button>
+  <button className="player-main" onClick={()=>canEdit&&onEdit(player)}><span className="player-title"><strong><AllianceRankBadge rank={playerAllianceRank(player)}/><PlayerSexIcon sex={player.sex}/>{player.name}</strong><span>{formatPower(player.totalPower)}</span></span><span className="formation-pills">{([1,2,3,4] as const).map(f=><span key={f}>F{f} {formatPower(player.formations[f].power)}</span>)}</span><span className="player-meta">HQ {player.mainBuildingLevel??'—'} · Capacity {formatPower(player.rallyCapacity)} · {frankyParticipationLabel(player.availability)}</span></button>
   <div className="player-actions">{assigned&&<Badge tone="blue">R{assigned} assigned</Badge>}{canEdit&&<><button onClick={()=>onEdit(player)} aria-label="Edit"><Pencil/></button><button disabled={atLimit} onClick={()=>duplicate(player.id)} aria-label="Duplicate" title={atLimit?`Maximum ${MAX_PLAYERS} players`:undefined}><Copy/></button><button onClick={()=>{if(confirm(`Delete ${player.name}?`))del(player.id)}} aria-label="Delete"><Trash2/></button></>}</div>
  </article>
 }

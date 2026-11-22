@@ -65,7 +65,7 @@ class SyncWindow:
         titles = tk.Frame(header, bg="#10151e")
         titles.pack(side="left", pady=16)
         tk.Label(titles, text="DARK WAR SYNC", bg="#10151e", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        tk.Label(titles, text="Alliance CP Companion", bg="#10151e", fg="#e8edf5", font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        tk.Label(titles, text="Alliance & State Data Companion", bg="#10151e", fg="#e8edf5", font=("Segoe UI", 16, "bold")).pack(anchor="w")
 
         body = tk.Frame(self.root, bg="#090c12")
         body.pack(fill="both", expand=True, padx=24, pady=20)
@@ -83,7 +83,7 @@ class SyncWindow:
         steps = tk.Frame(body, bg="#090c12")
         steps.pack(fill="x", pady=(20, 8))
         tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
-        for number, text in [("1", "Close the CP ranking screen, then click Start capture in the Alliance tab."), ("2", "Wait for Listening, then reopen Alliance Ranking → CP in Dark War."), ("3", "Click Finish & import; the player matching panel will open.")]:
+        for number, text in [("1", "Click Start capture in the Alliance tab and wait for Listening."), ("2", "Open Alliance members, State player power, then State alliance power."), ("3", "Click Finish & import; review UID matches before applying.")]:
             row = tk.Frame(steps, bg="#090c12")
             row.pack(fill="x", pady=4)
             tk.Label(row, text=number, bg="#202936", fg="#ff9a5a", font=("Segoe UI", 9, "bold"), width=3).pack(side="left")
@@ -125,7 +125,7 @@ class SyncWindow:
                 if message.startswith("[READY]"):
                     self.set_status("Connected", "KVI Planner is open and the helper is ready", "#61d095")
                 elif message.startswith("[CAPTURING]"):
-                    self.set_status("Listening for ranking", "Open Ranking → CP in Dark War now", "#62a5ff")
+                    self.set_status("Listening for game data", "Open alliance members and both State power rankings", "#62a5ff")
                 elif message.startswith("[COMPLETE]"):
                     self.set_status("Import complete", "Opening the player matching panel", "#61d095")
                     self.root.after(11000, self.close_window)
