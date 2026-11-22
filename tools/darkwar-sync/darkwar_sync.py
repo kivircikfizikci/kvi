@@ -5,6 +5,7 @@ import base64
 import csv
 import ctypes
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -128,6 +129,27 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 
 def remove_capture_filter():
     subprocess.run(["pktmon", "filter", "remove"], text=True, capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def game_server_addresses() -> list[str]:
+    try:
+        output = run(["netstat", "-ano", "-p", "TCP"]).stdout
+    except SyncError:
+        return []
+    addresses = set()
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or not parts[0].upper().startswith("TCP"):
+            continue
+        remote = parts[2]
+        try:
+            host, port = remote.rsplit(":", 1)
+            host = host.strip("[]")
+            if int(port) == GAME_PORT:
+                addresses.add(str(ipaddress.ip_address(host)))
+        except (ValueError, IndexError):
+            continue
+    return sorted(addresses)
 
 
 def pcapng_packets(path: Path):
@@ -336,6 +358,7 @@ def analysis_field_paths(value, prefix: str = "", paths: set[str] | None = None)
 def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive: dict | None = None) -> dict:
     requests = {}
     responses = {}
+    request_commands = set()
     decoded_messages = []
     decoded_requests = 0
     decoded_responses = 0
@@ -356,6 +379,8 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
                     request_id = params.get("_id") if isinstance(params, dict) else None
                     decoded_requests += 1
                     decoded_messages.append({"direction": "clientToServer", "command": command or "unmatched", "requestId": request_id, "payload": params})
+                    if command:
+                        request_commands.add(str(command))
                     if command and request_id is not None:
                         requests[request_id] = (command, params)
                 except Exception:
@@ -424,6 +449,7 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
         "decodedRequests": decoded_requests,
         "decodedResponses": decoded_responses,
         "recognizedResponses": sorted(responses.keys()),
+        "requestedCommands": sorted(request_commands),
         "missing": [name for name, present in (("allianceMembers", alliance_captured), ("statePlayers", bool(server_rows)), ("stateAlliances", bool(alliance_rows))) if not present],
     }
     if analysis_archive is not None:
@@ -524,9 +550,16 @@ class CaptureService:
                 if path.exists():
                     path.unlink()
             remove_capture_filter()
-            run(["pktmon", "filter", "add", "KVI-DarkWar", "-p", str(GAME_PORT)])
+            server_addresses = game_server_addresses()
+            if server_addresses:
+                for index, address in enumerate(server_addresses):
+                    run(["pktmon", "filter", "add", f"KVI-DarkWar-{index + 1}", "-i", address, "-t", "TCP"])
+                print(f"[CAPTURE TARGET] {', '.join(server_addresses)}", flush=True)
+            else:
+                run(["pktmon", "filter", "add", "KVI-DarkWar", "-t", "TCP", "-p", str(GAME_PORT)])
+                print("[CAPTURE TARGET] Game port fallback", flush=True)
             try:
-                run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
+                run(["pktmon", "start", "--capture", "--comp", "all", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
             except Exception:
                 remove_capture_filter()
                 raise
@@ -547,6 +580,8 @@ class CaptureService:
         with self.lock:
             if not self.capturing:
                 raise SyncError("Capture is not running. Click Start capture first.")
+            print("[FINALIZING] Waiting for in-flight game responses...", flush=True)
+            time.sleep(3)
             try:
                 run(["pktmon", "stop"])
             finally:
@@ -572,14 +607,15 @@ class CaptureService:
             result["captureSummary"]["analysisArchive"] = str(analysis_path)
             result["captureSummary"]["rawCapture"] = str(pcap_path)
             result["captureSummary"]["etlCapture"] = str(etl_path)
-            json_path, _csv_path = save_game_snapshot(result)
             state = result.get("stateSnapshot", {})
-            print(f"[SAVED] {json_path}", flush=True)
-            print(f"[ANALYSIS SAVED] {analysis_path}", flush=True)
             state_player_count = len(state.get("playerRanking", []))
             state_alliance_count = len(state.get("allianceRanking", []))
             if not result["players"] and not state_player_count and not state_alliance_count:
-                raise SyncError(f"Alliance member data was not captured. The partial capture was saved to {json_path}. Start a new capture, wait for Listening, then reopen the Alliance member/rank list before finishing.")
+                result["captureSummary"]["warning"] = "Ranking requests were seen, but no complete ranking response was decoded. Reopen the listed screens and wait for each list to finish loading before Finish."
+                print(f"[WARNING] No complete ranking response was decoded. Diagnostics were saved to {pcap_path}.", flush=True)
+            json_path, _csv_path = save_game_snapshot(result)
+            print(f"[SAVED] {json_path}", flush=True)
+            print(f"[ANALYSIS SAVED] {analysis_path}", flush=True)
             print(f"[COMPLETE] Read {len(result['players'])} alliance members, {state_player_count} state players and {state_alliance_count} alliances.", flush=True)
             return result
 

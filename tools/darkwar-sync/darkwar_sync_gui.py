@@ -168,15 +168,33 @@ class SyncWindow:
             "stateAlliances": (int(summary.get("stateAlliances") or 0), f"{int(summary.get('stateAlliances') or 0)} ranked alliances read"),
             "stateAllianceKills": (int(summary.get("stateAllianceKills") or 0), f"{int(summary.get('stateAllianceKills') or 0)} alliance kill rows read"),
         }
+        requested = set(summary.get("requestedCommands", []))
+        expected_commands = {
+            "allianceMembers": {"al.rank"},
+            "statePlayers": {"server.rank", "building.rank"},
+            "statePlayerKills": {"kill.rank"},
+            "stateAlliances": {"alliance.rank"},
+            "stateAllianceKills": {"kill.al.rank"},
+        }
         for key, (count, text) in values.items():
             dot, detail = self.result_labels[key]
             dot.configure(fg="#61d095" if count else "#ff6b73")
-            detail.configure(text=text if count else "Not read — reopen this screen during capture", fg="#8ee2b5" if count else "#ff9ba2")
+            request_seen = bool(requested & expected_commands[key])
+            missing_text = "Request seen · response incomplete" if request_seen else "Not read · reopen this screen during capture"
+            detail.configure(text=text if count else missing_text, fg="#8ee2b5" if count else "#ff9ba2")
         dot, detail = self.result_labels["archive"]
         decoded = int(summary.get("decodedResponses") or 0)
         packets = int(summary.get("capturedPackets") or 0)
         dot.configure(fg="#61d095" if packets else "#ff6b73")
         detail.configure(text=f"{packets} packets · {decoded} decoded responses saved", fg="#8ee2b5" if packets else "#ff9ba2")
+        core_total = sum(int(summary.get(key) or 0) for key in ("allianceMembers", "statePlayers", "stateAlliances"))
+        missing = summary.get("missing", [])
+        if not core_total:
+            self.set_status("Capture incomplete", "Ranking requests were seen, but their complete responses were not captured. Reopen each list, wait for it to load, then finish.", "#ff6b73")
+        elif missing:
+            self.set_status("Capture partially complete", "Saved everything read. Red rows must be reopened in a new capture.", "#f6bd60")
+        else:
+            self.set_status("Capture complete", "All core ranking categories were read and saved", "#61d095")
 
     def poll_messages(self):
         try:
