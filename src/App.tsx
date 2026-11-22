@@ -579,46 +579,46 @@ export default function App() {
               </div>
             </>
           )}
-        </header>
-        {activeModule !== "rally-planner" && (
-          <div className="global-cloud-session">
-            <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
-              <Cloud />
-              {sessionLabel}
-            </Badge>
-            {canEdit && (
-              <Button
-                variant="secondary"
-                onClick={() => selectOfficerPlayer("")}
-              >
-                <UserRoundCheck />
-                Change member
-              </Button>
-            )}
-            {canEdit && activeModule === "alliance" && (
-              <Button
-                variant="secondary"
-                onClick={() => setGameDataOpen((value) => !value)}
-              >
-                <Database />
-                Game data
-              </Button>
-            )}
-            <Button variant="secondary" onClick={logout}>
-              {signedIn ? (
-                <>
-                  <LogOut />
-                  Logout
-                </>
-              ) : (
-                <>
-                  <LogIn />
-                  Sign in
-                </>
+          {activeModule !== "rally-planner" && (
+            <div className="navbar-session">
+              <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
+                <Cloud />
+                {sessionLabel}
+              </Badge>
+              {canEdit && (
+                <Button
+                  variant="secondary"
+                  onClick={() => selectOfficerPlayer("")}
+                >
+                  <UserRoundCheck />
+                  Change member
+                </Button>
               )}
-            </Button>
-          </div>
-        )}
+              {canEdit && activeModule === "alliance" && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setGameDataOpen((value) => !value)}
+                >
+                  <Database />
+                  Game data
+                </Button>
+              )}
+              <Button variant="secondary" onClick={logout}>
+                {signedIn ? (
+                  <>
+                    <LogOut />
+                    Logout
+                  </>
+                ) : (
+                  <>
+                    <LogIn />
+                    Sign in
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </header>
         {(error || cloud.error) && (
           <div className="toast" role="alert">
             <span>{error || cloud.error}</span>

@@ -92,7 +92,7 @@ class SyncWindow:
         steps = tk.Frame(body, bg="#090c12")
         steps.pack(fill="x", pady=(20, 8))
         tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
-        for number, text in [("1", "Click Start capture here or in the Alliance tab; wait for Listening."), ("2", "Reopen Alliance members, State player power, then State alliance power."), ("3", "Click Finish & save JSON. The file is saved even when a category is missing.")]:
+        for number, text in [("1", "Click Start capture here or in the Alliance tab; wait for Listening."), ("2", "Open Alliance > Members (not ranking), then State player power and alliance power."), ("3", "Click Finish & save JSON. Captured categories are imported even if another is missing.")]:
             row = tk.Frame(steps, bg="#090c12")
             row.pack(fill="x", pady=4)
             tk.Label(row, text=number, bg="#202936", fg="#ff9a5a", font=("Segoe UI", 9, "bold"), width=3).pack(side="left")

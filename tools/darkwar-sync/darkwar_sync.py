@@ -312,7 +312,11 @@ def classify_response_payload(responses: dict, payload: dict):
             responses["server.rank:4"] = payload
     alliance_rows = payload.get("allianceRanking")
     if isinstance(alliance_rows, list) and alliance_rows:
-        responses["alliance.rank"] = payload
+        if any(isinstance(row, dict) and row.get("fightpower") is not None for row in alliance_rows):
+            responses["alliance.rank"] = payload
+            responses["alliance.rank:2"] = payload
+        elif any(isinstance(row, dict) and row.get("armyKill") is not None for row in alliance_rows):
+            responses["alliance.rank:kill"] = payload
 
 
 def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
@@ -512,9 +516,11 @@ class CaptureService:
             json_path, _csv_path = save_game_snapshot(result)
             state = result.get("stateSnapshot", {})
             print(f"[SAVED] {json_path}", flush=True)
-            if not result["players"]:
+            state_player_count = len(state.get("playerRanking", []))
+            state_alliance_count = len(state.get("allianceRanking", []))
+            if not result["players"] and not state_player_count and not state_alliance_count:
                 raise SyncError(f"Alliance member data was not captured. The partial capture was saved to {json_path}. Start a new capture, wait for Listening, then reopen the Alliance member/rank list before finishing.")
-            print(f"[COMPLETE] Read {len(result['players'])} alliance members, {len(state.get('playerRanking', []))} state players and {len(state.get('allianceRanking', []))} alliances.", flush=True)
+            print(f"[COMPLETE] Read {len(result['players'])} alliance members, {state_player_count} state players and {state_alliance_count} alliances.", flush=True)
             return result
 
 

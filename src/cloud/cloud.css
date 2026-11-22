@@ -121,21 +121,17 @@
   color: #8fa4be;
   font-size: 0.68rem;
 }
-.global-cloud-session {
-  position: fixed;
-  right: 14px;
-  top: 82px;
-  z-index: 15;
+.navbar-session {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 6px;
   border: 1px solid #303a49;
   border-radius: 8px;
-  background: #0d131ce8;
-  box-shadow: 0 8px 25px #0006;
+  background: #0d131c;
 }
-.global-cloud-session .btn {
+.navbar-session .btn {
   height: 30px;
   min-height: 30px;
   font-size: 0.7rem;
@@ -159,10 +155,11 @@
   .access-card {
     padding: 20px;
   }
-  .global-cloud-session {
-    top: auto;
-    right: 8px;
-    bottom: 8px;
+  .navbar-session {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
   }
   .top-actions .badge {
     display: none;
