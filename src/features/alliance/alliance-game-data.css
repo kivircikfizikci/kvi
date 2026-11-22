@@ -1,4 +1,4 @@
-.alliance-shell{max-width:none;padding:14px 18px}
+.alliance-shell{max-width:1500px;margin:0 auto;padding:18px}
 .alliance-grid{grid-template-columns:minmax(0,1fr)}
 .alliance-hero{padding:16px 20px}
 .alliance-hero h2 small{color:#8d9aab;margin-left:8px;font-size:.78rem}
@@ -12,14 +12,15 @@
 .alliance-ranking .ranking-head button:hover,.alliance-ranking .ranking-head button.active{color:var(--orange2)}
 
 @media (min-width:721px){
-  .alliance-ranking .ranking-head,.alliance-ranking .ranking-list article{grid-template-columns:60px minmax(300px,1fr) 90px 120px 120px 132px 70px;gap:10px}
+  .alliance-card.alliance-ranking .ranking-head,.alliance-card.alliance-ranking .ranking-list article{grid-template-columns:60px minmax(300px,1fr) 90px 120px 120px 132px 70px!important;gap:10px}
+  .alliance-ranking .ranking-head{grid-auto-flow:column;grid-template-rows:1fr}
   .alliance-ranking .ranking-actions{grid-column:7;grid-row:1}
 }
 
 @media (max-width:720px){
   .alliance-shell{padding:8px}
   .alliance-ranking .ranking-list{max-height:none}
-  .alliance-ranking .ranking-head,.alliance-ranking .ranking-list article{grid-template-columns:42px minmax(130px,1fr) 58px 76px 58px;gap:6px}
+  .alliance-card.alliance-ranking .ranking-head,.alliance-card.alliance-ranking .ranking-list article{grid-template-columns:42px minmax(130px,1fr) 58px 76px 58px!important;gap:6px}
   .alliance-ranking .ranking-head>button:nth-child(5),.alliance-ranking .ranking-head>span:nth-child(6),.alliance-ranking .ranking-list article>strong:nth-child(5),.alliance-ranking .ranking-list article>.badge{display:none}
   .alliance-ranking .ranking-actions{grid-column:5;grid-row:1}
 }
