@@ -20,4 +20,6 @@ Country is stored for future use but is not currently displayed. Gender is game-
 
 Every capture writes `KVI-Game-Data-*.json` to `Desktop\KVI Dark War Sync`, even when one of the requested game screens was not captured. If the browser reports `Failed to fetch`, use **Load saved game data** and choose that JSON file. Partial files containing State data can also be imported without changing the Alliance roster.
 
+The helper also saves `KVI-Capture-*.pcapng` and `.etl` diagnostic captures. These files make it possible to inspect game-data format changes when a scan produces zero recognized rows; they are not uploaded automatically.
+
 The JSON is the recommended source because it also includes the State snapshot used for update-to-update percentage changes.

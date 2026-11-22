@@ -345,7 +345,15 @@ export default function App() {
     }));
   };
   const logout = () => {
+    const rememberedUid =
+      localStorage.getItem("kvi-cloud-remember") === "true"
+        ? localStorage.getItem("kvi-cloud-user-uid")
+        : null;
     clearAuth();
+    if (rememberedUid) {
+      localStorage.setItem("kvi-cloud-user-uid", rememberedUid);
+      localStorage.setItem("kvi-cloud-remember", "true");
+    }
     setOfficerPlayerId("");
     setCloudCanEdit(false);
     setCloud((value) => ({

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import sqlite3
 import struct
 import subprocess
@@ -123,6 +124,10 @@ def run(command: list[str]) -> subprocess.CompletedProcess[str]:
     if result.returncode:
         raise SyncError((result.stderr or result.stdout).strip() or f"Command failed: {command[0]}")
     return result
+
+
+def remove_capture_filter():
+    subprocess.run(["pktmon", "filter", "remove"], text=True, capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def pcapng_packets(path: Path):
@@ -294,9 +299,27 @@ def local_country_by_uid() -> dict[str, str]:
         return {}
 
 
+def classify_response_payload(responses: dict, payload: dict):
+    member_rows = payload.get("list")
+    if isinstance(member_rows, list) and any(isinstance(row, dict) and row.get("uid") and row.get("name") and row.get("rank") is not None and (row.get("power") is not None or row.get("mainCityLv") is not None) for row in member_rows):
+        responses["al.rank"] = payload
+    server_rows = payload.get("serverRanking")
+    if isinstance(server_rows, list) and server_rows:
+        responses["server.rank"] = payload
+        if any(isinstance(row, dict) and row.get("armyKill") is not None for row in server_rows):
+            responses["server.rank:3"] = payload
+        if any(isinstance(row, dict) and row.get("power") is not None for row in server_rows):
+            responses["server.rank:4"] = payload
+    alliance_rows = payload.get("allianceRanking")
+    if isinstance(alliance_rows, list) and alliance_rows:
+        responses["alliance.rank"] = payload
+
+
 def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
     requests = {}
     responses = {}
+    decoded_requests = 0
+    decoded_responses = 0
     key = codec_key()
     for stream_key, stream in reassembled_directional_streams(pcap):
         if stream_key[2] != GAME_PORT:
@@ -314,6 +337,7 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
                     request_id = params.get("_id") if isinstance(params, dict) else None
                     if command and request_id is not None:
                         requests[request_id] = (command, params)
+                        decoded_requests += 1
                 except Exception:
                     continue
         else:
@@ -327,6 +351,10 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
                 try:
                     root = parse_sfs(decode_frame(encrypted, key))
                     payload = root.get("p", {}).get("p", {})
+                    if not isinstance(payload, dict):
+                        continue
+                    decoded_responses += 1
+                    classify_response_payload(responses, payload)
                     request_id = payload.get("_id") if isinstance(payload, dict) else None
                     request = requests.get(request_id)
                     command, params = request if request else (None, {})
@@ -367,6 +395,10 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
         "allianceMembers": len(players),
         "statePlayers": len(server_rows),
         "stateAlliances": len(alliance_rows),
+        "capturedPackets": sum(1 for _ in pcapng_packets(pcap)),
+        "decodedRequests": decoded_requests,
+        "decodedResponses": decoded_responses,
+        "recognizedResponses": sorted(responses.keys()),
         "missing": [name for name, present in (("allianceMembers", alliance_captured), ("statePlayers", bool(server_rows)), ("stateAlliances", bool(alliance_rows))) if not present],
     }
     return result
@@ -409,6 +441,17 @@ def save_game_snapshot(result: dict) -> tuple[Path, Path]:
     return json_path, csv_path
 
 
+def save_capture_diagnostics(etl: Path, pcap: Path) -> tuple[Path, Path]:
+    output = desktop_directory() / "KVI Dark War Sync"
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    etl_path = output / f"KVI-Capture-{stamp}.etl"
+    pcap_path = output / f"KVI-Capture-{stamp}.pcapng"
+    shutil.copy2(etl, etl_path)
+    shutil.copy2(pcap, pcap_path)
+    return etl_path, pcap_path
+
+
 class CaptureService:
     def __init__(self):
         self.directory = tempfile.TemporaryDirectory(prefix="kvi-darkwar-sync-")
@@ -422,7 +465,13 @@ class CaptureService:
             for path in (self.etl, self.pcap):
                 if path.exists():
                     path.unlink()
-            run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
+            remove_capture_filter()
+            run(["pktmon", "filter", "add", "KVI-DarkWar", "-p", str(GAME_PORT)])
+            try:
+                run(["pktmon", "start", "--capture", "--comp", "nics", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
+            except Exception:
+                remove_capture_filter()
+                raise
             self.capturing = True
             print("\n[CAPTURING] Open Alliance members, State player power and State alliance power screens.", flush=True)
             print("Return to the planner and click Finish & import after all three screens have loaded.\n", flush=True)
@@ -434,6 +483,7 @@ class CaptureService:
                     run(["pktmon", "stop"])
                 finally:
                     self.capturing = False
+                    remove_capture_filter()
 
     def finish(self):
         with self.lock:
@@ -443,8 +493,22 @@ class CaptureService:
                 run(["pktmon", "stop"])
             finally:
                 self.capturing = False
+                remove_capture_filter()
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            result = extract_game_data(self.pcap, allow_partial=True)
+            etl_path, pcap_path = save_capture_diagnostics(self.etl, self.pcap)
+            print(f"[RAW SAVED] {pcap_path}", flush=True)
+            try:
+                result = extract_game_data(self.pcap, allow_partial=True)
+            except Exception as error:
+                failure = {
+                    "source": "dark-war-game-data-error",
+                    "capturedAt": datetime.now(timezone.utc).isoformat(),
+                    "players": [],
+                    "captureSummary": {"error": str(error), "rawCapture": str(pcap_path), "etlCapture": str(etl_path)},
+                }
+                json_path, _csv_path = save_game_snapshot(failure)
+                print(f"[SAVED] {json_path}", flush=True)
+                raise SyncError(f"Captured packets could not be decoded. Diagnostic files were saved to {pcap_path} and {json_path}.") from error
             json_path, _csv_path = save_game_snapshot(result)
             state = result.get("stateSnapshot", {})
             print(f"[SAVED] {json_path}", flush=True)
