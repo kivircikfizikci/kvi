@@ -11,6 +11,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 import urllib.request
+import urllib.error
 
 import darkwar_sync
 
@@ -42,8 +43,8 @@ class SyncWindow:
         self.closing = False
         self.root = tk.Tk()
         self.root.title("KVI Dark War Sync")
-        self.root.geometry("620x440")
-        self.root.minsize(560, 400)
+        self.root.geometry("700x570")
+        self.root.minsize(620, 520)
         self.root.configure(bg="#090c12")
         self.root.protocol("WM_DELETE_WINDOW", self.stop)
         self.build_ui()
@@ -78,23 +79,33 @@ class SyncWindow:
         self.status = tk.Label(status_text, text="Starting helper...", bg="#10151e", fg="#e8edf5", font=("Segoe UI", 12, "bold"))
         self.status.pack(anchor="w")
         self.detail = tk.Label(status_text, text="Checking Dark War and local connection", bg="#10151e", fg="#8b96a8", font=("Segoe UI", 9))
+        self.detail.configure(wraplength=540, justify="left")
         self.detail.pack(anchor="w", pady=(3, 0))
+
+        capture_actions = tk.Frame(body, bg="#090c12")
+        capture_actions.pack(fill="x", pady=(16, 4))
+        self.start_capture_button = ttk.Button(capture_actions, text="Start capture", style="Primary.TButton", command=self.start_capture)
+        self.start_capture_button.pack(side="left", fill="x", expand=True)
+        self.finish_capture_button = ttk.Button(capture_actions, text="Finish & save JSON", style="Secondary.TButton", command=self.finish_capture, state="disabled")
+        self.finish_capture_button.pack(side="left", fill="x", expand=True, padx=(10, 0))
 
         steps = tk.Frame(body, bg="#090c12")
         steps.pack(fill="x", pady=(20, 8))
         tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
-        for number, text in [("1", "Click Start capture in the Alliance tab and wait for Listening."), ("2", "Open Alliance members, State player power, then State alliance power."), ("3", "Click Finish & import; review UID matches before applying.")]:
+        for number, text in [("1", "Click Start capture here or in the Alliance tab; wait for Listening."), ("2", "Reopen Alliance members, State player power, then State alliance power."), ("3", "Click Finish & save JSON. The file is saved even when a category is missing.")]:
             row = tk.Frame(steps, bg="#090c12")
             row.pack(fill="x", pady=4)
             tk.Label(row, text=number, bg="#202936", fg="#ff9a5a", font=("Segoe UI", 9, "bold"), width=3).pack(side="left")
             tk.Label(row, text=text, bg="#090c12", fg="#c3ccd9", font=("Segoe UI", 9), anchor="w").pack(side="left", padx=10)
 
         self.log = tk.Label(body, text="", bg="#0d131c", fg="#8b96a8", font=("Consolas", 9), anchor="w", justify="left", padx=12, pady=8)
+        self.log.configure(wraplength=620)
         self.log.pack(fill="x", pady=(10, 14))
         actions = tk.Frame(body, bg="#090c12")
         actions.pack(fill="x", side="bottom")
         ttk.Button(actions, text="Stop helper", style="Secondary.TButton", command=self.stop).pack(side="right")
         ttk.Button(actions, text="Open KVI Planner", style="Primary.TButton", command=self.open_planner).pack(side="right", padx=(0, 10))
+        ttk.Button(actions, text="Open saved files", style="Secondary.TButton", command=self.open_saved_folder).pack(side="left")
 
     def worker_command(self):
         if getattr(sys, "frozen", False):
@@ -124,16 +135,26 @@ class SyncWindow:
                 message = self.messages.get_nowait()
                 if message.startswith("[READY]"):
                     self.set_status("Connected", "KVI Planner is open and the helper is ready", "#61d095")
+                    self.start_capture_button.configure(state="normal")
                 elif message.startswith("[CAPTURING]"):
                     self.set_status("Listening for game data", "Open alliance members and both State power rankings", "#62a5ff")
+                    self.start_capture_button.configure(state="disabled")
+                    self.finish_capture_button.configure(state="normal")
                 elif message.startswith("[COMPLETE]"):
-                    self.set_status("Import complete", "Opening the player matching panel", "#61d095")
-                    self.root.after(11000, self.close_window)
+                    self.set_status("Capture complete", "JSON is ready for browser import or manual upload", "#61d095")
+                    self.start_capture_button.configure(state="normal")
+                    self.finish_capture_button.configure(state="disabled")
                 elif message.startswith("[SAVED]"):
                     path = message.split("]", 1)[-1].strip()
-                    self.log.configure(text=f"Saved roster: {path}")
+                    self.log.configure(text=f"Saved JSON: {path}")
                 elif message.startswith("[ACTION NEEDED]") or message.startswith("[ERROR]"):
                     self.set_status("Action needed", message.split("]", 1)[-1].strip(), "#ff6b73")
+                    self.start_capture_button.configure(state="normal")
+                    self.finish_capture_button.configure(state="disabled")
+                elif message.startswith("__REQUEST_ERROR__:"):
+                    self.set_status("Action needed", message.split(":", 1)[1], "#ff6b73")
+                    self.start_capture_button.configure(state="normal")
+                    self.finish_capture_button.configure(state="disabled")
                 elif message.startswith("__EXIT__:"):
                     code = int(message.split(":", 1)[1])
                     if code and not self.closing:
@@ -148,6 +169,41 @@ class SyncWindow:
     def open_planner(self):
         if not darkwar_sync.reconnect_existing(self.site_url):
             self.set_status("Not connected", "Wait a moment and try Open KVI Planner again", "#f6bd60")
+
+    def capture_request(self, path: str):
+        def request_worker():
+            try:
+                connection = json.loads(darkwar_sync.CONNECTION_FILE.read_text(encoding="utf-8"))
+                request = urllib.request.Request(
+                    f"{connection['url']}{path}",
+                    method="POST",
+                    headers={"X-KVI-Sync-Token": connection["token"]},
+                )
+                urllib.request.urlopen(request, timeout=90).read()
+            except urllib.error.HTTPError as error:
+                try:
+                    detail = json.loads(error.read().decode("utf-8")).get("error", str(error))
+                except Exception:
+                    detail = str(error)
+                self.messages.put(f"__REQUEST_ERROR__:{detail}")
+            except Exception as error:
+                self.messages.put(f"__REQUEST_ERROR__:{error}")
+        threading.Thread(target=request_worker, daemon=True).start()
+
+    def start_capture(self):
+        self.set_status("Starting capture...", "Preparing Windows packet capture", "#f6bd60")
+        self.start_capture_button.configure(state="disabled")
+        self.capture_request("/capture/start")
+
+    def finish_capture(self):
+        self.set_status("Reading captured data...", "The JSON will be saved to your Desktop", "#f6bd60")
+        self.finish_capture_button.configure(state="disabled")
+        self.capture_request("/capture/finish")
+
+    def open_saved_folder(self):
+        folder = darkwar_sync.desktop_directory() / "KVI Dark War Sync"
+        folder.mkdir(parents=True, exist_ok=True)
+        os.startfile(folder)
 
     def request_shutdown(self):
         try:

@@ -13,11 +13,11 @@ Country is stored for future use but is not currently displayed. Gender is game-
 ## How to sync
 
 1. Run **KVI-DarkWar-Sync.exe**. Windows requests administrator access for passive packet capture.
-2. In the planner Alliance tab, click **Start capture** and wait for **Listening for game data**.
+2. Click **Start capture** in the helper window or in the planner Alliance tab and wait for **Listening for game data**.
 3. In Dark War, open the Alliance member list, State player kill ranking, State player power ranking and State alliance power ranking. Wait a few seconds on each screen.
 4. Return to the planner and click **Finish & import**.
 5. Review UID matches, then apply the update.
 
-Every successful capture also writes a complete `KVI-Game-Data-*.json` and alliance-member CSV to `Desktop\KVI Dark War Sync`. If the browser reports `Failed to fetch`, use **Load saved game data** and choose that JSON file.
+Every capture writes `KVI-Game-Data-*.json` to `Desktop\KVI Dark War Sync`, even when one of the requested game screens was not captured. If the browser reports `Failed to fetch`, use **Load saved game data** and choose that JSON file. Partial files containing State data can also be imported without changing the Alliance roster.
 
 The JSON is the recommended source because it also includes the State snapshot used for update-to-update percentage changes.

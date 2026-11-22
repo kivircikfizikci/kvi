@@ -294,7 +294,7 @@ def local_country_by_uid() -> dict[str, str]:
         return {}
 
 
-def extract_game_data(pcap: Path) -> dict:
+def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
     requests = {}
     responses = {}
     key = codec_key()
@@ -337,8 +337,10 @@ def extract_game_data(pcap: Path) -> dict:
                 except Exception:
                     continue
     alliance_payload = responses.get("al.rank")
-    if not alliance_payload or not isinstance(alliance_payload.get("list"), list):
+    alliance_captured = bool(alliance_payload and isinstance(alliance_payload.get("list"), list))
+    if not alliance_captured and not allow_partial:
         raise SyncError("Alliance member data was not captured. Start capture, then reopen the Alliance member/rank list before finishing.")
+    alliance_payload = alliance_payload if alliance_captured else {"list": []}
     country_by_uid = local_country_by_uid()
     alliance_id = str(alliance_payload.get("allianceId") or "")
     alliance_rank_payload = responses.get("alliance.rank:2") or responses.get("alliance.rank", {})
@@ -361,6 +363,12 @@ def extract_game_data(pcap: Path) -> dict:
     server_kills = {str(row.get("uid") or ""): int(row.get("armyKill") or 0) for row in server_kill_rows}
     if server_rows or alliance_rows:
         result["stateSnapshot"] = {"id": captured_at, "capturedAt": captured_at, "playerRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("power") or 0), "totalKills": server_kills.get(str(row.get("uid") or "")), "sex": int(row.get("sex") or 0) or None, "level": int(row.get("lv") or 0) or None, "allianceName": str(row.get("allianceName") or ""), "allianceTag": str(row.get("abbr") or ""), "country": str(row.get("country") or "")} for row in server_rows], "allianceRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("fightpower") or 0), "leader": str(row.get("leader") or ""), "currentMembers": int(row.get("curMember") or 0), "maxMembers": int(row.get("maxMember") or 0), "country": str(row.get("country") or "")} for row in alliance_rows]}
+    result["captureSummary"] = {
+        "allianceMembers": len(players),
+        "statePlayers": len(server_rows),
+        "stateAlliances": len(alliance_rows),
+        "missing": [name for name, present in (("allianceMembers", alliance_captured), ("statePlayers", bool(server_rows)), ("stateAlliances", bool(alliance_rows))) if not present],
+    }
     return result
 
 
@@ -436,11 +444,13 @@ class CaptureService:
             finally:
                 self.capturing = False
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            result = extract_game_data(self.pcap)
+            result = extract_game_data(self.pcap, allow_partial=True)
             json_path, _csv_path = save_game_snapshot(result)
             state = result.get("stateSnapshot", {})
-            print(f"[COMPLETE] Read {len(result['players'])} alliance members, {len(state.get('playerRanking', []))} state players and {len(state.get('allianceRanking', []))} alliances. Closing the helper...", flush=True)
             print(f"[SAVED] {json_path}", flush=True)
+            if not result["players"]:
+                raise SyncError(f"Alliance member data was not captured. The partial capture was saved to {json_path}. Start a new capture, wait for Listening, then reopen the Alliance member/rank list before finishing.")
+            print(f"[COMPLETE] Read {len(result['players'])} alliance members, {len(state.get('playerRanking', []))} state players and {len(state.get('allianceRanking', []))} alliances.", flush=True)
             return result
 
 
@@ -495,10 +505,6 @@ def make_handler(service: CaptureService, token: str):
                     result = service.finish()
                     self.send_json(200, result)
                     self.wfile.flush()
-                    def close_after_response():
-                        time.sleep(10)
-                        self.server.shutdown()
-                    threading.Thread(target=close_after_response, daemon=True).start()
                 elif self.path == "/shutdown":
                     service.stop()
                     self.send_json(200, {"stopping": True})
@@ -562,8 +568,8 @@ def main():
     print("=" * 52, flush=True)
     print("[READY] Local helper is connected to KVI Planner.", flush=True)
     print("Keep this window open while syncing.", flush=True)
-    print("It will close automatically after a successful import.", flush=True)
-    print("You can close this window to stop the helper at any time.\n", flush=True)
+    print("Start and finish capture from this app or from KVI Planner.", flush=True)
+    print("Close the helper when you are finished.\n", flush=True)
     open_planner(args.site_url, local_url, token)
     try:
         server.serve_forever()

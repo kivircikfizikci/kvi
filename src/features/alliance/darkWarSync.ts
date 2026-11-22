@@ -35,11 +35,10 @@ export function parseSavedDarkWarRoster(valueText:string):DarkWarRosterResult{
   const value=JSON.parse(valueText) as AnyRow[]|Record<string,unknown>
   const object=Array.isArray(value)?{}:value
   const rawRows=Array.isArray(value)?value:(object.players??object.members)
-  if(!Array.isArray(rawRows)||!rawRows.length)throw new Error('This file does not contain a Dark War alliance roster.')
-  const players=playerRows(rawRows as AnyRow[])
-  if(!players.length)throw new Error('No valid player rows were found in this file.')
   const capturedAt=text(object.capturedAt)||new Date().toISOString()
   const rawSnapshot=object.stateSnapshot as StateSnapshot|undefined
   const stateSnapshot=rawSnapshot&&Array.isArray(rawSnapshot.playerRanking)&&Array.isArray(rawSnapshot.allianceRanking)?{...rawSnapshot,id:rawSnapshot.id||capturedAt,capturedAt:rawSnapshot.capturedAt||capturedAt}:undefined
+  const players=Array.isArray(rawRows)?playerRows(rawRows as AnyRow[]):[]
+  if(!players.length&&!stateSnapshot)throw new Error('This file does not contain a valid Alliance roster or State snapshot.')
   return{players,capturedAt,source:text(object.source)||'dark-war-game-data',stateSnapshot}
 }

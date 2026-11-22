@@ -340,7 +340,9 @@ export function AllianceHub({
         level: entry.mainBuildingLevel ?? null,
         allianceRank: entry.allianceRank,
       }));
-    const previousMembers = snapshots[0]?.allianceMembers ?? [];
+    const previousMembers =
+      snapshots.find((snapshot) => snapshot.allianceMembers?.length)
+        ?.allianceMembers ?? [];
     const currentByUid = new Map(
       currentMembers.map((member) => [member.uid, member]),
     );
@@ -447,7 +449,9 @@ export function AllianceHub({
         (syncMatches[entry.uid ?? entry.name] &&
           syncMatches[entry.uid ?? entry.name] !== "skip"),
     );
-    const previousMembers = snapshots[0]?.allianceMembers ?? [];
+    const previousMembers =
+      snapshots.find((snapshot) => snapshot.allianceMembers?.length)
+        ?.allianceMembers ?? [];
     const currentUids = new Set(
       (pendingStateSnapshot?.allianceMembers ?? []).map((member) => member.uid),
     );

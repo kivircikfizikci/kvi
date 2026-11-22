@@ -27,4 +27,9 @@ describe('saved Dark War roster',()=>{
     expect(result.players[0]).toMatchObject({uid:'1025967256000716',name:'kvi',power:69588750,totalKills:382632,allianceRank:'R4',mainBuildingLevel:25,sex:1})
     expect(result.stateSnapshot?.id).toBe('scan-1')
   })
+  it('keeps a partial helper capture when only State data was found',()=>{
+    const result=parseSavedDarkWarRoster(JSON.stringify({capturedAt:'2026-11-22T11:00:00Z',players:[],stateSnapshot:{id:'partial-1',capturedAt:'2026-11-22T11:00:00Z',playerRanking:[{uid:'1',name:'Player',rank:1,power:100,level:30,allianceName:'Alliance',allianceTag:'TAG'}],allianceRanking:[]}}))
+    expect(result.players).toEqual([])
+    expect(result.stateSnapshot?.playerRanking).toHaveLength(1)
+  })
 })
