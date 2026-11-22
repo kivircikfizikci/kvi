@@ -75,6 +75,155 @@ function PowerChange({ value }: { value: number | null }) {
   );
 }
 
+function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
+  const available = snapshots.filter(
+    (snapshot) => snapshot.allianceMembers?.length,
+  );
+  const latest = available[0];
+  if (!latest?.allianceMembers?.length) return null;
+  const latestAt = new Date(latest.capturedAt).getTime();
+  const weekTarget = latestAt - 7 * 24 * 60 * 60 * 1000;
+  const weeklyBaseline = available.find(
+    (snapshot) => new Date(snapshot.capturedAt).getTime() <= weekTarget,
+  );
+  const baseline = weeklyBaseline ?? available[available.length - 1];
+  const hasComparison = Boolean(baseline && baseline.id !== latest.id);
+  const currentMembers = latest.allianceMembers;
+  const baselineMembers = baseline?.allianceMembers ?? [];
+  const baselineByUid = new Map(
+    baselineMembers.map((member) => [member.uid, member]),
+  );
+  const totalPower = currentMembers.reduce(
+    (total, member) => total + member.power,
+    0,
+  );
+  const baselineTotal = baselineMembers.reduce(
+    (total, member) => total + member.power,
+    0,
+  );
+  const totalChange = hasComparison
+    ? ((totalPower - baselineTotal) / Math.max(1, baselineTotal)) * 100
+    : null;
+  const memberGrowth = currentMembers
+    .map((member) => {
+      const before = baselineByUid.get(member.uid);
+      return {
+        member,
+        change:
+          before?.power && before.power > 0
+            ? ((member.power - before.power) / before.power) * 100
+            : null,
+        gained: before ? member.power - before.power : null,
+      };
+    })
+    .filter(
+      (item): item is typeof item & { change: number; gained: number } =>
+        item.change != null && item.gained != null,
+    );
+  const fastest = [...memberGrowth]
+    .sort((a, b) => b.change - a.change)
+    .slice(0, 5);
+  const slowest = [...memberGrowth]
+    .sort((a, b) => a.change - b.change)
+    .slice(0, 5);
+  const periodLabel = weeklyBaseline
+    ? "Last 7 days"
+    : hasComparison
+      ? `Since ${new Date(baseline!.capturedAt).toLocaleDateString()}`
+      : "Waiting for comparison";
+  const GrowthList = ({
+    title,
+    rows,
+    tone,
+  }: {
+    title: string;
+    rows: typeof fastest;
+    tone: "positive" | "negative";
+  }) => (
+    <article className="growth-leaderboard">
+      <header>
+        <div>
+          <h4>{title}</h4>
+          <span>{periodLabel}</span>
+        </div>
+      </header>
+      <div>
+        {rows.map((item, index) => (
+          <div key={item.member.uid}>
+            <b>{index + 1}</b>
+            <span>
+              <strong>{item.member.name}</strong>
+              <small>
+                {item.gained >= 0 ? "+" : ""}
+                {formatPower(item.gained)}
+              </small>
+            </span>
+            <PowerChange value={item.change} />
+          </div>
+        ))}
+        {!rows.length && (
+          <p className="growth-empty">
+            A second alliance snapshot is required.
+          </p>
+        )}
+      </div>
+      <i className={tone} />
+    </article>
+  );
+  return (
+    <section className="alliance-growth">
+      <header>
+        <div>
+          <p className="eyebrow">Alliance growth</p>
+          <h3>Growth overview</h3>
+        </div>
+        <span>{periodLabel}</span>
+      </header>
+      <div className="growth-summary">
+        <article>
+          <span>Total power</span>
+          <strong>{formatPower(totalPower)}</strong>
+          <PowerChange value={totalChange} />
+        </article>
+        <article>
+          <span>Average power</span>
+          <strong>{formatPower(totalPower / currentMembers.length)}</strong>
+          <small>{currentMembers.length} current members</small>
+        </article>
+        <article>
+          <span>Power gained</span>
+          <strong
+            className={
+              totalPower - baselineTotal >= 0 ? "positive" : "negative"
+            }
+          >
+            {hasComparison && totalPower - baselineTotal >= 0 ? "+" : ""}
+            {hasComparison ? formatPower(totalPower - baselineTotal) : "—"}
+          </strong>
+          <small>Includes joins and departures</small>
+        </article>
+        <article>
+          <span>Tracked updates</span>
+          <strong>{available.length}</strong>
+          <small>Up to 30 cloud snapshots</small>
+        </article>
+      </div>
+      <div className="growth-rankings">
+        <GrowthList
+          title="Fastest rising members"
+          rows={fastest}
+          tone="positive"
+        />
+        <GrowthList
+          title="Lowest growth members"
+          rows={slowest}
+          tone="negative"
+        />
+      </div>
+    </section>
+  );
+}
+
 export function AllianceHub({
   onEdit,
   gameDataOpen,
@@ -131,7 +280,7 @@ export function AllianceHub({
       void db.stateSnapshots
         .orderBy("capturedAt")
         .reverse()
-        .limit(2)
+        .limit(30)
         .toArray()
         .then(setSnapshots);
     load();
@@ -254,8 +403,8 @@ export function AllianceHub({
     setSyncReviewOpen(true);
     setSyncState("ready");
     const exact = own.filter((entry) =>
-        matchedGamePlayer(players, entry.name, entry.uid),
-      ).length;
+      matchedGamePlayer(players, entry.name, entry.uid),
+    ).length;
     setSyncMessage(
       `Read ${entries.length} alliance members · ${exact} matched by UID/name${result.stateSnapshot ? ` · ${result.stateSnapshot.playerRanking.length} state players · ${result.stateSnapshot.allianceRanking.length} alliances` : ""}.`,
     );
@@ -335,16 +484,12 @@ export function AllianceHub({
   );
   const latestStateByUid = useMemo(
     () =>
-      new Map(
-        (snapshots[0]?.playerRanking ?? []).map((row) => [row.uid, row]),
-      ),
+      new Map((snapshots[0]?.playerRanking ?? []).map((row) => [row.uid, row])),
     [snapshots],
   );
   const previousStateByUid = useMemo(
     () =>
-      new Map(
-        (snapshots[1]?.playerRanking ?? []).map((row) => [row.uid, row]),
-      ),
+      new Map((snapshots[1]?.playerRanking ?? []).map((row) => [row.uid, row])),
     [snapshots],
   );
   const movementHistory = useMemo(
@@ -356,10 +501,7 @@ export function AllianceHub({
     [snapshots],
   );
   const trackedFormerMembers = useMemo(() => {
-    const latestChange = new Map<
-      string,
-      (typeof movementHistory)[number]
-    >();
+    const latestChange = new Map<string, (typeof movementHistory)[number]>();
     movementHistory.forEach((change) => {
       if (!latestChange.has(change.uid)) latestChange.set(change.uid, change);
     });
@@ -419,6 +561,7 @@ export function AllianceHub({
         </div>
       </section>
       <div className="alliance-grid">
+        <AllianceGrowthPanel snapshots={snapshots} />
         <section className="alliance-card alliance-ranking">
           <header>
             <div>
@@ -573,9 +716,7 @@ export function AllianceHub({
           <header>
             <div>
               <h3>Alliance movement</h3>
-              <p>
-                Joined and departed members are detected by permanent UID.
-              </p>
+              <p>Joined and departed members are detected by permanent UID.</p>
             </div>
             <Badge tone="amber">{trackedFormerMembers} former tracked</Badge>
           </header>
@@ -593,9 +734,9 @@ export function AllianceHub({
               const before = previousStateByUid.get(change.uid);
               const changed = Boolean(
                 current &&
-                  before &&
-                  (current.power !== before.power ||
-                    current.totalKills !== before.totalKills),
+                before &&
+                (current.power !== before.power ||
+                  current.totalKills !== before.totalKills),
               );
               const currentAlliance =
                 change.type === "joined"
