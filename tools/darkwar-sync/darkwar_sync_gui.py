@@ -43,8 +43,8 @@ class SyncWindow:
         self.closing = False
         self.root = tk.Tk()
         self.root.title("KVI Dark War Sync")
-        self.root.geometry("700x570")
-        self.root.minsize(620, 520)
+        self.root.geometry("760x720")
+        self.root.minsize(680, 650)
         self.root.configure(bg="#090c12")
         self.root.protocol("WM_DELETE_WINDOW", self.stop)
         self.build_ui()
@@ -89,6 +89,28 @@ class SyncWindow:
         self.finish_capture_button = ttk.Button(capture_actions, text="Finish & save JSON", style="Secondary.TButton", command=self.finish_capture, state="disabled")
         self.finish_capture_button.pack(side="left", fill="x", expand=True, padx=(10, 0))
 
+        results = tk.Frame(body, bg="#10151e", highlightbackground="#2a3545", highlightthickness=1)
+        results.pack(fill="x", pady=(16, 0))
+        tk.Label(results, text="CAPTURE RESULTS", bg="#10151e", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=14, pady=(11, 5))
+        self.result_labels = {}
+        for key, title in [
+            ("allianceMembers", "Alliance members, power & ranks"),
+            ("statePlayers", "State player power ranking"),
+            ("statePlayerKills", "State player kill ranking"),
+            ("stateAlliances", "Alliance power ranking"),
+            ("stateAllianceKills", "Alliance kill ranking"),
+            ("archive", "Raw & decoded analysis archive"),
+        ]:
+            row = tk.Frame(results, bg="#10151e")
+            row.pack(fill="x", padx=14, pady=3)
+            dot = tk.Label(row, text="●", bg="#10151e", fg="#596579", font=("Segoe UI", 10))
+            dot.pack(side="left", padx=(0, 8))
+            tk.Label(row, text=title, bg="#10151e", fg="#c3ccd9", font=("Segoe UI", 9), width=31, anchor="w").pack(side="left")
+            detail = tk.Label(row, text="Waiting for capture", bg="#10151e", fg="#8b96a8", font=("Segoe UI", 9), anchor="w")
+            detail.pack(side="left", fill="x", expand=True)
+            self.result_labels[key] = (dot, detail)
+        tk.Frame(results, bg="#10151e", height=7).pack()
+
         steps = tk.Frame(body, bg="#090c12")
         steps.pack(fill="x", pady=(20, 8))
         tk.Label(steps, text="HOW TO SYNC", bg="#090c12", fg="#ff9a5a", font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 9))
@@ -129,6 +151,33 @@ class SyncWindow:
         self.detail.configure(text=detail)
         self.dot.configure(fg=color)
 
+    def reset_capture_results(self):
+        for dot, detail in self.result_labels.values():
+            dot.configure(fg="#596579")
+            detail.configure(text="Waiting for capture", fg="#8b96a8")
+
+    def show_capture_results(self, result: dict):
+        summary = result.get("captureSummary", {})
+        players = result.get("players", [])
+        alliance_tag = next((str(player.get("allianceTag") or "") for player in players if player.get("allianceTag")), "")
+        prefix = f"[{alliance_tag}] " if alliance_tag else ""
+        values = {
+            "allianceMembers": (int(summary.get("allianceMembers") or 0), f"{prefix}{int(summary.get('allianceMembers') or 0)} members read"),
+            "statePlayers": (int(summary.get("statePlayers") or 0), f"{int(summary.get('statePlayers') or 0)} ranked players read"),
+            "statePlayerKills": (int(summary.get("statePlayerKills") or 0), f"{int(summary.get('statePlayerKills') or 0)} player kill rows read"),
+            "stateAlliances": (int(summary.get("stateAlliances") or 0), f"{int(summary.get('stateAlliances') or 0)} ranked alliances read"),
+            "stateAllianceKills": (int(summary.get("stateAllianceKills") or 0), f"{int(summary.get('stateAllianceKills') or 0)} alliance kill rows read"),
+        }
+        for key, (count, text) in values.items():
+            dot, detail = self.result_labels[key]
+            dot.configure(fg="#61d095" if count else "#ff6b73")
+            detail.configure(text=text if count else "Not read — reopen this screen during capture", fg="#8ee2b5" if count else "#ff9ba2")
+        dot, detail = self.result_labels["archive"]
+        decoded = int(summary.get("decodedResponses") or 0)
+        packets = int(summary.get("capturedPackets") or 0)
+        dot.configure(fg="#61d095" if packets else "#ff6b73")
+        detail.configure(text=f"{packets} packets · {decoded} decoded responses saved", fg="#8ee2b5" if packets else "#ff9ba2")
+
     def poll_messages(self):
         try:
             while True:
@@ -138,6 +187,7 @@ class SyncWindow:
                     self.start_capture_button.configure(state="normal")
                 elif message.startswith("[CAPTURING]"):
                     self.set_status("Listening for game data", "Open alliance members and both State power rankings", "#62a5ff")
+                    self.reset_capture_results()
                     self.start_capture_button.configure(state="disabled")
                     self.finish_capture_button.configure(state="normal")
                 elif message.startswith("[COMPLETE]"):
@@ -147,6 +197,8 @@ class SyncWindow:
                 elif message.startswith("[SAVED]"):
                     path = message.split("]", 1)[-1].strip()
                     self.log.configure(text=f"Saved JSON: {path}")
+                elif message.startswith("__CAPTURE_RESULT__:"):
+                    self.show_capture_results(json.loads(message.split(":", 1)[1]))
                 elif message.startswith("[ACTION NEEDED]") or message.startswith("[ERROR]"):
                     self.set_status("Action needed", message.split("]", 1)[-1].strip(), "#ff6b73")
                     self.start_capture_button.configure(state="normal")
@@ -179,7 +231,9 @@ class SyncWindow:
                     method="POST",
                     headers={"X-KVI-Sync-Token": connection["token"]},
                 )
-                urllib.request.urlopen(request, timeout=90).read()
+                response_body = urllib.request.urlopen(request, timeout=90).read()
+                if path == "/capture/finish":
+                    self.messages.put(f"__CAPTURE_RESULT__:{response_body.decode('utf-8')}")
             except urllib.error.HTTPError as error:
                 try:
                     detail = json.loads(error.read().decode("utf-8")).get("error", str(error))

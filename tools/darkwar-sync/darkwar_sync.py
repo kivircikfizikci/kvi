@@ -319,9 +319,24 @@ def classify_response_payload(responses: dict, payload: dict):
             responses["alliance.rank:kill"] = payload
 
 
-def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
+def analysis_field_paths(value, prefix: str = "", paths: set[str] | None = None) -> set[str]:
+    paths = paths if paths is not None else set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            paths.add(path)
+            analysis_field_paths(child, path, paths)
+    elif isinstance(value, list):
+        list_prefix = f"{prefix}[]" if prefix else "[]"
+        for child in value:
+            analysis_field_paths(child, list_prefix, paths)
+    return paths
+
+
+def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive: dict | None = None) -> dict:
     requests = {}
     responses = {}
+    decoded_messages = []
     decoded_requests = 0
     decoded_responses = 0
     key = codec_key()
@@ -339,9 +354,10 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
                     envelope = root.get("p", {})
                     command, params = envelope.get("c"), envelope.get("p", {})
                     request_id = params.get("_id") if isinstance(params, dict) else None
+                    decoded_requests += 1
+                    decoded_messages.append({"direction": "clientToServer", "command": command or "unmatched", "requestId": request_id, "payload": params})
                     if command and request_id is not None:
                         requests[request_id] = (command, params)
-                        decoded_requests += 1
                 except Exception:
                     continue
         else:
@@ -355,13 +371,14 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
                 try:
                     root = parse_sfs(decode_frame(encrypted, key))
                     payload = root.get("p", {}).get("p", {})
-                    if not isinstance(payload, dict):
-                        continue
                     decoded_responses += 1
-                    classify_response_payload(responses, payload)
                     request_id = payload.get("_id") if isinstance(payload, dict) else None
                     request = requests.get(request_id)
                     command, params = request if request else (None, {})
+                    decoded_messages.append({"direction": "serverToClient", "command": command or "unmatched", "requestId": request_id, "payload": payload})
+                    if not isinstance(payload, dict):
+                        continue
+                    classify_response_payload(responses, payload)
                     if command in {"al.rank", "server.rank", "alliance.rank"}:
                         responses[command] = payload
                         if isinstance(params, dict) and params.get("type") is not None:
@@ -377,6 +394,8 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
     alliance_id = str(alliance_payload.get("allianceId") or "")
     alliance_rank_payload = responses.get("alliance.rank:2") or responses.get("alliance.rank", {})
     alliance_rows = alliance_rank_payload.get("allianceRanking", []) if isinstance(alliance_rank_payload, dict) else []
+    alliance_kill_payload = responses.get("alliance.rank:kill", {})
+    alliance_kill_rows = alliance_kill_payload.get("allianceRanking", []) if isinstance(alliance_kill_payload, dict) else []
     own_alliance = next((row for row in alliance_rows if str(row.get("uid")) == alliance_id), {})
     alliance_tag, alliance_name = str(own_alliance.get("abbr") or ""), str(own_alliance.get("alliancename") or "")
     players = []
@@ -398,13 +417,31 @@ def extract_game_data(pcap: Path, allow_partial: bool = False) -> dict:
     result["captureSummary"] = {
         "allianceMembers": len(players),
         "statePlayers": len(server_rows),
+        "statePlayerKills": len(server_kill_rows),
         "stateAlliances": len(alliance_rows),
+        "stateAllianceKills": len(alliance_kill_rows),
         "capturedPackets": sum(1 for _ in pcapng_packets(pcap)),
         "decodedRequests": decoded_requests,
         "decodedResponses": decoded_responses,
         "recognizedResponses": sorted(responses.keys()),
         "missing": [name for name, present in (("allianceMembers", alliance_captured), ("statePlayers", bool(server_rows)), ("stateAlliances", bool(alliance_rows))) if not present],
     }
+    if analysis_archive is not None:
+        command_counts = {}
+        field_paths = set()
+        for message in decoded_messages:
+            command = str(message.get("command") or "unmatched")
+            command_counts[command] = command_counts.get(command, 0) + 1
+            analysis_field_paths(message.get("payload"), paths=field_paths)
+        analysis_archive.update({
+            "source": "dark-war-decoded-analysis",
+            "capturedAt": captured_at,
+            "messageCount": len(decoded_messages),
+            "commandSummary": [{"command": command, "messages": count} for command, count in sorted(command_counts.items())],
+            "fieldPaths": sorted(field_paths),
+            "recognizedResponses": sorted(responses.keys()),
+            "messages": decoded_messages,
+        })
     return result
 
 
@@ -443,6 +480,23 @@ def save_game_snapshot(result: dict) -> tuple[Path, Path]:
         writer.writeheader()
         writer.writerows(result["players"])
     return json_path, csv_path
+
+
+def save_analysis_archive(archive: dict) -> Path:
+    output = desktop_directory() / "KVI Dark War Sync"
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    archive_path = output / f"KVI-Decoded-Archive-{stamp}.json"
+    archive_path.write_text(
+        json.dumps(
+            archive,
+            ensure_ascii=False,
+            indent=2,
+            default=lambda value: {"$bytesHex": value.hex()} if isinstance(value, bytes) else str(value),
+        ),
+        encoding="utf-8",
+    )
+    return archive_path
 
 
 def save_capture_diagnostics(etl: Path, pcap: Path) -> tuple[Path, Path]:
@@ -502,7 +556,8 @@ class CaptureService:
             etl_path, pcap_path = save_capture_diagnostics(self.etl, self.pcap)
             print(f"[RAW SAVED] {pcap_path}", flush=True)
             try:
-                result = extract_game_data(self.pcap, allow_partial=True)
+                analysis_archive = {}
+                result = extract_game_data(self.pcap, allow_partial=True, analysis_archive=analysis_archive)
             except Exception as error:
                 failure = {
                     "source": "dark-war-game-data-error",
@@ -513,9 +568,14 @@ class CaptureService:
                 json_path, _csv_path = save_game_snapshot(failure)
                 print(f"[SAVED] {json_path}", flush=True)
                 raise SyncError(f"Captured packets could not be decoded. Diagnostic files were saved to {pcap_path} and {json_path}.") from error
+            analysis_path = save_analysis_archive(analysis_archive)
+            result["captureSummary"]["analysisArchive"] = str(analysis_path)
+            result["captureSummary"]["rawCapture"] = str(pcap_path)
+            result["captureSummary"]["etlCapture"] = str(etl_path)
             json_path, _csv_path = save_game_snapshot(result)
             state = result.get("stateSnapshot", {})
             print(f"[SAVED] {json_path}", flush=True)
+            print(f"[ANALYSIS SAVED] {analysis_path}", flush=True)
             state_player_count = len(state.get("playerRanking", []))
             state_alliance_count = len(state.get("allianceRanking", []))
             if not result["players"] and not state_player_count and not state_alliance_count:
