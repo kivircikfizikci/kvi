@@ -441,10 +441,11 @@ def classify_response_payload(responses: dict, payload: dict):
         responses["al.rank"] = payload
     server_rows = payload.get("serverRanking")
     if isinstance(server_rows, list) and server_rows:
-        responses["server.rank"] = payload
         if any(isinstance(row, dict) and row.get("armyKill") is not None for row in server_rows):
             responses["server.rank:3"] = payload
+            responses["kill.rank"] = payload
         if any(isinstance(row, dict) and row.get("power") is not None for row in server_rows):
+            responses["server.rank"] = payload
             responses["server.rank:4"] = payload
     alliance_rows = payload.get("allianceRanking")
     if isinstance(alliance_rows, list) and alliance_rows:
@@ -453,6 +454,7 @@ def classify_response_payload(responses: dict, payload: dict):
             responses["alliance.rank:2"] = payload
         elif any(isinstance(row, dict) and row.get("armyKill") is not None for row in alliance_rows):
             responses["alliance.rank:kill"] = payload
+            responses["kill.al.rank"] = payload
 
 
 def analysis_field_paths(value, prefix: str = "", paths: set[str] | None = None) -> set[str]:
@@ -518,7 +520,7 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
                     if not isinstance(payload, dict):
                         continue
                     classify_response_payload(responses, payload)
-                    if command in {"al.rank", "server.rank", "alliance.rank"}:
+                    if command in {"al.rank", "server.rank", "alliance.rank", "building.rank", "kill.rank", "kill.al.rank"}:
                         responses[command] = payload
                         if isinstance(params, dict) and params.get("type") is not None:
                             responses[f"{command}:{params['type']}"] = payload
@@ -533,7 +535,7 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
     alliance_id = str(alliance_payload.get("allianceId") or "")
     alliance_rank_payload = responses.get("alliance.rank:2") or responses.get("alliance.rank", {})
     alliance_rows = alliance_rank_payload.get("allianceRanking", []) if isinstance(alliance_rank_payload, dict) else []
-    alliance_kill_payload = responses.get("alliance.rank:kill", {})
+    alliance_kill_payload = responses.get("kill.al.rank") or responses.get("alliance.rank:kill", {})
     alliance_kill_rows = alliance_kill_payload.get("allianceRanking", []) if isinstance(alliance_kill_payload, dict) else []
     own_alliance = next((row for row in alliance_rows if str(row.get("uid")) == alliance_id), {})
     alliance_tag, alliance_name = str(own_alliance.get("abbr") or ""), str(own_alliance.get("alliancename") or "")
@@ -547,12 +549,16 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
     captured_at = datetime.now(timezone.utc).isoformat()
     result = {"source": "dark-war-game-data", "capturedAt": captured_at, "players": players}
     server_payload = responses.get("server.rank:4") or responses.get("server.rank", {})
-    server_kill_payload = responses.get("server.rank:3", {})
+    server_kill_payload = responses.get("kill.rank") or responses.get("server.rank:3", {})
     server_rows = server_payload.get("serverRanking", []) if isinstance(server_payload, dict) else []
     server_kill_rows = server_kill_payload.get("serverRanking", []) if isinstance(server_kill_payload, dict) else []
+    if server_rows and not any(isinstance(row, dict) and row.get("power") is not None for row in server_rows):
+        server_rows = []
     server_kills = {str(row.get("uid") or ""): int(row.get("armyKill") or 0) for row in server_kill_rows}
     if server_rows or alliance_rows:
         result["stateSnapshot"] = {"id": captured_at, "capturedAt": captured_at, "playerRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("power") or 0), "totalKills": server_kills.get(str(row.get("uid") or "")), "sex": int(row.get("sex") or 0) or None, "level": int(row.get("lv") or 0) or None, "allianceName": str(row.get("allianceName") or ""), "allianceTag": str(row.get("abbr") or ""), "country": str(row.get("country") or "")} for row in server_rows], "allianceRanking": [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "power": int(row.get("fightpower") or 0), "leader": str(row.get("leader") or ""), "currentMembers": int(row.get("curMember") or 0), "maxMembers": int(row.get("maxMember") or 0), "country": str(row.get("country") or "")} for row in alliance_rows]}
+    result["statePlayerKillRanking"] = [{"uid": str(row.get("uid") or ""), "name": str(row.get("name") or ""), "rank": int(row.get("rank") or 0), "totalKills": int(row.get("armyKill") or 0)} for row in server_kill_rows]
+    result["stateAllianceKillRanking"] = [{"uid": str(row.get("uid") or ""), "name": str(row.get("alliancename") or ""), "tag": str(row.get("abbr") or ""), "rank": int(row.get("rank") or 0), "totalKills": int(row.get("armyKill") or 0)} for row in alliance_kill_rows]
     result["captureSummary"] = {
         "allianceMembers": len(players),
         "statePlayers": len(server_rows),
@@ -582,6 +588,54 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
             "recognizedResponses": sorted(responses.keys()),
             "messages": decoded_messages,
         })
+    return result
+
+
+def merge_game_data_results(sources: list[tuple[str, dict]]) -> dict:
+    captured_at = max((result.get("capturedAt", "") for _name, result in sources), default=datetime.now(timezone.utc).isoformat())
+    players = max((result.get("players", []) for _name, result in sources), key=len, default=[])
+    player_rankings = [result.get("stateSnapshot", {}).get("playerRanking", []) for _name, result in sources]
+    alliance_rankings = [result.get("stateSnapshot", {}).get("allianceRanking", []) for _name, result in sources]
+    player_kill_rankings = [result.get("statePlayerKillRanking", []) for _name, result in sources]
+    alliance_kill_rankings = [result.get("stateAllianceKillRanking", []) for _name, result in sources]
+    player_ranking = list(max(player_rankings, key=len, default=[]))
+    alliance_ranking = list(max(alliance_rankings, key=len, default=[]))
+    player_kills = list(max(player_kill_rankings, key=len, default=[]))
+    alliance_kills = list(max(alliance_kill_rankings, key=len, default=[]))
+    kills_by_uid = {row.get("uid"): row.get("totalKills") for row in player_kills if row.get("uid")}
+    if player_ranking:
+        player_ranking = [{**row, "totalKills": kills_by_uid.get(row.get("uid"), row.get("totalKills"))} for row in player_ranking]
+    result = {
+        "source": "dark-war-game-data",
+        "capturedAt": captured_at,
+        "players": players,
+        "statePlayerKillRanking": player_kills,
+        "stateAllianceKillRanking": alliance_kills,
+    }
+    if player_ranking or alliance_ranking:
+        result["stateSnapshot"] = {
+            "id": captured_at,
+            "capturedAt": captured_at,
+            "playerRanking": player_ranking,
+            "allianceRanking": alliance_ranking,
+        }
+    summaries = [(name, source.get("captureSummary", {})) for name, source in sources]
+    requested = sorted({command for _name, summary in summaries for command in summary.get("requestedCommands", [])})
+    recognized = sorted({command for _name, summary in summaries for command in summary.get("recognizedResponses", [])})
+    result["captureSummary"] = {
+        "allianceMembers": len(players),
+        "statePlayers": len(player_ranking),
+        "statePlayerKills": len(player_kills),
+        "stateAlliances": len(alliance_ranking),
+        "stateAllianceKills": len(alliance_kills),
+        "capturedPackets": sum(int(summary.get("capturedPackets") or 0) for _name, summary in summaries),
+        "decodedRequests": sum(int(summary.get("decodedRequests") or 0) for _name, summary in summaries),
+        "decodedResponses": sum(int(summary.get("decodedResponses") or 0) for _name, summary in summaries),
+        "recognizedResponses": recognized,
+        "requestedCommands": requested,
+        "captureSources": [{"name": name, "summary": summary} for name, summary in summaries],
+        "missing": [name for name, present in (("allianceMembers", bool(players)), ("statePlayers", bool(player_ranking)), ("stateAlliances", bool(alliance_ranking))) if not present],
+    }
     return result
 
 
@@ -650,6 +704,15 @@ def save_capture_diagnostics(etl: Path, pcap: Path) -> tuple[Path, Path]:
     return etl_path, pcap_path
 
 
+def save_supplemental_capture(pcap: Path, label: str) -> Path:
+    output = desktop_directory() / "KVI Dark War Sync"
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    destination = output / f"KVI-{label}-Capture-{stamp}.pcapng"
+    shutil.copy2(pcap, destination)
+    return destination
+
+
 class CaptureService:
     def __init__(self):
         self.directory = tempfile.TemporaryDirectory(prefix="kvi-darkwar-sync-")
@@ -713,13 +776,26 @@ class CaptureService:
                 self.capturing = False
                 remove_capture_filter()
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            parse_pcap = self.raw_pcap if raw_packet_count and self.raw_pcap.is_file() else self.pcap
-            etl_path, pcap_path = save_capture_diagnostics(self.etl, parse_pcap)
-            print(f"[CAPTURE SOURCE] {'Raw IP' if parse_pcap == self.raw_pcap else 'PktMon'} · {raw_packet_count} raw packets", flush=True)
+            etl_path, pcap_path = save_capture_diagnostics(self.etl, self.pcap)
+            raw_pcap_path = save_supplemental_capture(self.raw_pcap, "Raw-IP") if raw_packet_count and self.raw_pcap.is_file() else None
+            print(f"[CAPTURE SOURCE] PktMon + Raw IP · {raw_packet_count} raw packets", flush=True)
             print(f"[RAW SAVED] {pcap_path}", flush=True)
             try:
-                analysis_archive = {}
-                result = extract_game_data(parse_pcap, allow_partial=True, analysis_archive=analysis_archive)
+                source_results = []
+                source_archives = {}
+                pktmon_archive = {}
+                source_results.append(("pktmon", extract_game_data(self.pcap, allow_partial=True, analysis_archive=pktmon_archive)))
+                source_archives["pktmon"] = pktmon_archive
+                if raw_pcap_path:
+                    raw_archive = {}
+                    source_results.append(("rawIp", extract_game_data(self.raw_pcap, allow_partial=True, analysis_archive=raw_archive)))
+                    source_archives["rawIp"] = raw_archive
+                result = merge_game_data_results(source_results)
+                analysis_archive = {
+                    "source": "dark-war-decoded-analysis",
+                    "capturedAt": result["capturedAt"],
+                    "sources": source_archives,
+                }
             except Exception as error:
                 failure = {
                     "source": "dark-war-game-data-error",
@@ -734,10 +810,13 @@ class CaptureService:
             result["captureSummary"]["analysisArchive"] = str(analysis_path)
             result["captureSummary"]["rawCapture"] = str(pcap_path)
             result["captureSummary"]["etlCapture"] = str(etl_path)
+            if raw_pcap_path:
+                result["captureSummary"]["rawIpCapture"] = str(raw_pcap_path)
             state = result.get("stateSnapshot", {})
             state_player_count = len(state.get("playerRanking", []))
             state_alliance_count = len(state.get("allianceRanking", []))
-            if not result["players"] and not state_player_count and not state_alliance_count:
+            kill_count = len(result.get("statePlayerKillRanking", [])) + len(result.get("stateAllianceKillRanking", []))
+            if not result["players"] and not state_player_count and not state_alliance_count and not kill_count:
                 result["captureSummary"]["warning"] = "Ranking requests were seen, but no complete ranking response was decoded. Reopen the listed screens and wait for each list to finish loading before Finish."
                 print(f"[WARNING] No complete ranking response was decoded. Diagnostics were saved to {pcap_path}.", flush=True)
             json_path, _csv_path = save_game_snapshot(result)

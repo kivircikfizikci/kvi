@@ -188,8 +188,9 @@ class SyncWindow:
         dot.configure(fg="#61d095" if packets else "#ff6b73")
         detail.configure(text=f"{packets} packets · {decoded} decoded responses saved", fg="#8ee2b5" if packets else "#ff9ba2")
         core_total = sum(int(summary.get(key) or 0) for key in ("allianceMembers", "statePlayers", "stateAlliances"))
+        captured_total = core_total + sum(int(summary.get(key) or 0) for key in ("statePlayerKills", "stateAllianceKills"))
         missing = summary.get("missing", [])
-        if not core_total:
+        if not captured_total:
             self.set_status("Capture incomplete", "Ranking requests were seen, but their complete responses were not captured. Reopen each list, wait for it to load, then finish.", "#ff6b73")
         elif missing:
             self.set_status("Capture partially complete", "Saved everything read. Red rows must be reopened in a new capture.", "#f6bd60")

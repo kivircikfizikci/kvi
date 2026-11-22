@@ -115,6 +115,7 @@ export interface StateAllianceRanking {
   tag: string;
   rank: number;
   power: number;
+  totalKills?: number | null;
   leader: string;
   currentMembers: number;
   maxMembers: number;

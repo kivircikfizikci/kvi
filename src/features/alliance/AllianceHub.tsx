@@ -381,7 +381,48 @@ export function AllianceHub({
     const reliableRoster =
       previousMembers.length > 0 &&
       currentMembers.length >= previousMembers.length * 0.75;
-    const detectedAt = result.stateSnapshot?.capturedAt ?? result.capturedAt;
+    const previousStateSnapshot = snapshots.find(
+      (snapshot) =>
+        snapshot.playerRanking.length || snapshot.allianceRanking.length,
+    );
+    const playerKills = new Map(
+      (result.statePlayerKillRanking ?? []).map((row) => [
+        row.uid,
+        row.totalKills,
+      ]),
+    );
+    const allianceKills = new Map(
+      (result.stateAllianceKillRanking ?? []).map((row) => [
+        row.uid,
+        row.totalKills,
+      ]),
+    );
+    const capturedState = result.stateSnapshot;
+    const hasStateUpdate = Boolean(
+      capturedState || playerKills.size || allianceKills.size,
+    );
+    const mergedStateSnapshot =
+      hasStateUpdate && (capturedState || previousStateSnapshot)
+        ? {
+            id: result.capturedAt,
+            capturedAt: result.capturedAt,
+            playerRanking: (capturedState?.playerRanking.length
+              ? capturedState.playerRanking
+              : (previousStateSnapshot?.playerRanking ?? [])
+            ).map((row) => ({
+              ...row,
+              totalKills: playerKills.get(row.uid) ?? row.totalKills,
+            })),
+            allianceRanking: (capturedState?.allianceRanking.length
+              ? capturedState.allianceRanking
+              : (previousStateSnapshot?.allianceRanking ?? [])
+            ).map((row) => ({
+              ...row,
+              totalKills: allianceKills.get(row.uid) ?? row.totalKills,
+            })),
+          }
+        : undefined;
+    const detectedAt = mergedStateSnapshot?.capturedAt ?? result.capturedAt;
     const newChanges = reliableRoster
       ? [
           ...currentMembers
@@ -420,13 +461,13 @@ export function AllianceHub({
     ].slice(-200);
     setPendingRoster(entries);
     setPendingStateSnapshot({
-      ...(result.stateSnapshot ?? {
+      ...(mergedStateSnapshot ?? {
         id: result.capturedAt,
         capturedAt: result.capturedAt,
         playerRanking: [],
         allianceRanking: [],
       }),
-      allianceMembers: currentMembers,
+      allianceMembers: currentMembers.length ? currentMembers : previousMembers,
       membershipChanges,
     });
     setSyncMatches({});
@@ -437,7 +478,7 @@ export function AllianceHub({
       matchedGamePlayer(players, entry.name, entry.uid),
     ).length;
     setSyncMessage(
-      `Read ${entries.length} alliance members · ${exact} matched by UID/name${result.stateSnapshot ? ` · ${result.stateSnapshot.playerRanking.length} state players · ${result.stateSnapshot.allianceRanking.length} alliances` : ""}.`,
+      `Read ${entries.length} alliance members · ${exact} matched by UID/name${mergedStateSnapshot ? ` · ${mergedStateSnapshot.playerRanking.length} state players · ${mergedStateSnapshot.allianceRanking.length} alliances` : ""}.`,
     );
   };
   const finishGameSync = async () => {
