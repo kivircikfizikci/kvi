@@ -25,6 +25,27 @@ type SortKey =
   "rank" | "name" | "level" | "power" | "kills" | "leader" | "members";
 const delta = (current: number, previous?: number) =>
   previous && previous > 0 ? ((current - previous) / previous) * 100 : null;
+
+const distinctPowerSnapshots = <
+  T extends StatePlayerRanking | StateAllianceRanking,
+>(
+  snapshots: StateSnapshot[],
+  rows: (snapshot: StateSnapshot) => T[],
+) => {
+  const fingerprints = new Set<string>();
+  return snapshots.filter((snapshot) => {
+    const ranking = rows(snapshot);
+    if (!ranking.length) return false;
+    const fingerprint = ranking
+      .map((row) => `${row.uid}:${row.rank}:${row.power}`)
+      .sort()
+      .join("|");
+    if (fingerprints.has(fingerprint)) return false;
+    fingerprints.add(fingerprint);
+    return true;
+  });
+};
+
 function Change({
   value,
   rankChange,
@@ -95,17 +116,32 @@ export function StateHub() {
     window.addEventListener("planner-local-change", load);
     return () => window.removeEventListener("planner-local-change", load);
   }, []);
-  const rankingSnapshots = useMemo(
+  const playerSnapshots = useMemo(
       () =>
-        snapshots.filter(
-          (snapshot) =>
-            snapshot.playerRanking.length > 0 ||
-            snapshot.allianceRanking.length > 0,
+        distinctPowerSnapshots(snapshots, (snapshot) => snapshot.playerRanking),
+      [snapshots],
+    ),
+    allianceSnapshots = useMemo(
+      () =>
+        distinctPowerSnapshots(
+          snapshots,
+          (snapshot) => snapshot.allianceRanking,
         ),
       [snapshots],
     ),
-    latest = rankingSnapshots[0],
-    previous = rankingSnapshots[1],
+    rankingSnapshots = useMemo(() => {
+      const ids = new Set(
+        [...playerSnapshots, ...allianceSnapshots].map(
+          (snapshot) => snapshot.id,
+        ),
+      );
+      return snapshots.filter((snapshot) => ids.has(snapshot.id));
+    }, [snapshots, playerSnapshots, allianceSnapshots]),
+    latestPlayerSnapshot = playerSnapshots[0],
+    previousPlayerSnapshot = playerSnapshots[1],
+    latestAllianceSnapshot = allianceSnapshots[0],
+    previousAllianceSnapshot = allianceSnapshots[1],
+    latest = mode === "players" ? latestPlayerSnapshot : latestAllianceSnapshot,
     sexByUid = useMemo(
       () =>
         new Map(
@@ -134,7 +170,7 @@ export function StateHub() {
   );
   const selectedHistory = useMemo(
     () =>
-      rankingSnapshots
+      playerSnapshots
         .map((snapshot) => {
           const row = snapshot.playerRanking.find(
             (player) => player.uid === selectedUid,
@@ -154,7 +190,7 @@ export function StateHub() {
             point != null,
         )
         .reverse(),
-    [rankingSnapshots, selectedUid],
+    [playerSnapshots, selectedUid],
   );
   const onSort = (key: SortKey) => {
     if (sort === key)
@@ -169,9 +205,12 @@ export function StateHub() {
       ? a.localeCompare(b)
       : Number(a) - Number(b);
   const players = useMemo(() => {
-    if (!latest) return [];
+    if (!latestPlayerSnapshot) return [];
     const before = new Map(
-        (previous?.playerRanking ?? []).map((row) => [row.uid, row]),
+        (previousPlayerSnapshot?.playerRanking ?? []).map((row) => [
+          row.uid,
+          row,
+        ]),
       ),
       value = (row: StatePlayerRanking) =>
         sort === "name"
@@ -183,7 +222,7 @@ export function StateHub() {
               : sort === "kills"
                 ? (row.totalKills ?? killsByUid.get(row.uid) ?? -1)
                 : row.rank;
-    return latest.playerRanking
+    return latestPlayerSnapshot.playerRanking
       .filter((row) =>
         `${row.name} ${row.allianceName} ${row.allianceTag}`
           .toLowerCase()
@@ -194,11 +233,21 @@ export function StateHub() {
         (a, b) =>
           compare(value(a.row), value(b.row)) * (direction === "asc" ? 1 : -1),
       );
-  }, [latest, previous, query, sort, direction, killsByUid]);
+  }, [
+    latestPlayerSnapshot,
+    previousPlayerSnapshot,
+    query,
+    sort,
+    direction,
+    killsByUid,
+  ]);
   const alliances = useMemo(() => {
-    if (!latest) return [];
+    if (!latestAllianceSnapshot) return [];
     const before = new Map(
-        (previous?.allianceRanking ?? []).map((row) => [row.uid, row]),
+        (previousAllianceSnapshot?.allianceRanking ?? []).map((row) => [
+          row.uid,
+          row,
+        ]),
       ),
       value = (row: StateAllianceRanking) =>
         sort === "name"
@@ -210,7 +259,7 @@ export function StateHub() {
               : sort === "power"
                 ? row.power
                 : row.rank;
-    return latest.allianceRanking
+    return latestAllianceSnapshot.allianceRanking
       .filter((row) =>
         `${row.name} ${row.tag} ${row.leader}`
           .toLowerCase()
@@ -221,7 +270,13 @@ export function StateHub() {
         (a, b) =>
           compare(value(a.row), value(b.row)) * (direction === "asc" ? 1 : -1),
       );
-  }, [latest, previous, query, sort, direction]);
+  }, [
+    latestAllianceSnapshot,
+    previousAllianceSnapshot,
+    query,
+    sort,
+    direction,
+  ]);
   const changeMode = (next: "players" | "alliances") => {
     setMode(next);
     setSort("rank");
@@ -245,7 +300,7 @@ export function StateHub() {
           </div>
         )}
       </section>
-      {!latest ? (
+      {!latestPlayerSnapshot && !latestAllianceSnapshot ? (
         <section className="state-empty">
           <Building2 />
           <h3>No state snapshot yet</h3>
@@ -257,21 +312,31 @@ export function StateHub() {
             <article>
               <UsersRound />
               <span>
-                Ranked players<strong>{latest.playerRanking.length}</strong>
+                Ranked players
+                <strong>
+                  {latestPlayerSnapshot?.playerRanking.length ?? 0}
+                </strong>
               </span>
             </article>
             <article>
               <Building2 />
               <span>
-                Ranked alliances<strong>{latest.allianceRanking.length}</strong>
+                Ranked alliances
+                <strong>
+                  {latestAllianceSnapshot?.allianceRanking.length ?? 0}
+                </strong>
               </span>
             </article>
             <article>
               <span>
                 Top player
-                <strong>{latest.playerRanking[0]?.name ?? "—"}</strong>
+                <strong>
+                  {latestPlayerSnapshot?.playerRanking[0]?.name ?? "—"}
+                </strong>
                 <small>
-                  {formatPower(latest.playerRanking[0]?.power ?? 0)}
+                  {formatPower(
+                    latestPlayerSnapshot?.playerRanking[0]?.power ?? 0,
+                  )}
                 </small>
               </span>
             </article>
@@ -279,11 +344,13 @@ export function StateHub() {
               <span>
                 Top alliance
                 <strong>
-                  [{latest.allianceRanking[0]?.tag}]{" "}
-                  {latest.allianceRanking[0]?.name}
+                  [{latestAllianceSnapshot?.allianceRanking[0]?.tag ?? "—"}]{" "}
+                  {latestAllianceSnapshot?.allianceRanking[0]?.name ?? "—"}
                 </strong>
                 <small>
-                  {formatPower(latest.allianceRanking[0]?.power ?? 0)}
+                  {formatPower(
+                    latestAllianceSnapshot?.allianceRanking[0]?.power ?? 0,
+                  )}
                 </small>
               </span>
             </article>

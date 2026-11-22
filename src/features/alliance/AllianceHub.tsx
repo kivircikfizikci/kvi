@@ -75,10 +75,37 @@ function PowerChange({ value }: { value: number | null }) {
   );
 }
 
+const distinctAllianceSnapshots = (snapshots: StateSnapshot[]) => {
+  const fingerprints = new Set<string>();
+  return snapshots.filter((snapshot) => {
+    const members = snapshot.allianceMembers ?? [];
+    if (!members.length) return false;
+    const fingerprint = members
+      .map((member) => `${member.uid}:${member.power}`)
+      .sort()
+      .join("|");
+    if (fingerprints.has(fingerprint)) return false;
+    fingerprints.add(fingerprint);
+    return true;
+  });
+};
+
+const distinctPlayerStateSnapshots = (snapshots: StateSnapshot[]) => {
+  const fingerprints = new Set<string>();
+  return snapshots.filter((snapshot) => {
+    if (!snapshot.playerRanking.length) return false;
+    const fingerprint = snapshot.playerRanking
+      .map((player) => `${player.uid}:${player.rank}:${player.power}`)
+      .sort()
+      .join("|");
+    if (fingerprints.has(fingerprint)) return false;
+    fingerprints.add(fingerprint);
+    return true;
+  });
+};
+
 function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
-  const available = snapshots.filter(
-    (snapshot) => snapshot.allianceMembers?.length,
-  );
+  const available = distinctAllianceSnapshots(snapshots);
   const latest = available[0];
   if (!latest?.allianceMembers?.length) return null;
   const latestAt = new Date(latest.capturedAt).getTime();
@@ -89,9 +116,8 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
   const fallbackBaseline = snapshots.find(
     (snapshot) =>
       snapshot.id !== latest.id &&
-      Boolean(
-        snapshot.allianceMembers?.length || snapshot.playerRanking.length,
-      ),
+      !snapshot.allianceMembers?.length &&
+      snapshot.playerRanking.length > 0,
   );
   const baseline = weeklyBaseline ?? available[1] ?? fallbackBaseline;
   const hasComparison = Boolean(baseline && baseline.id !== latest.id);
@@ -288,6 +314,10 @@ export function AllianceHub({
   const [pendingStateSnapshot, setPendingStateSnapshot] = useState<
     StateSnapshot | undefined
   >();
+  const [pendingStatePatches, setPendingStatePatches] = useState<
+    StateSnapshot[]
+  >([]);
+  const [pendingHasRosterUpdate, setPendingHasRosterUpdate] = useState(false);
   const [syncMatches, setSyncMatches] = useState<
     Record<string, GameRosterMatch>
   >({});
@@ -369,9 +399,10 @@ export function AllianceHub({
         level: entry.mainBuildingLevel ?? null,
         allianceRank: entry.allianceRank,
       }));
-    const previousMembers =
-      snapshots.find((snapshot) => snapshot.allianceMembers?.length)
-        ?.allianceMembers ?? [];
+    const previousAllianceSnapshot = snapshots.find(
+      (snapshot) => snapshot.allianceMembers?.length,
+    );
+    const previousMembers = previousAllianceSnapshot?.allianceMembers ?? [];
     const currentByUid = new Map(
       currentMembers.map((member) => [member.uid, member]),
     );
@@ -381,9 +412,11 @@ export function AllianceHub({
     const reliableRoster =
       previousMembers.length > 0 &&
       currentMembers.length >= previousMembers.length * 0.75;
-    const previousStateSnapshot = snapshots.find(
-      (snapshot) =>
-        snapshot.playerRanking.length || snapshot.allianceRanking.length,
+    const previousPlayerState = snapshots.find(
+      (snapshot) => snapshot.playerRanking.length,
+    );
+    const previousAllianceState = snapshots.find(
+      (snapshot) => snapshot.allianceRanking.length,
     );
     const playerKills = new Map(
       (result.statePlayerKillRanking ?? []).map((row) => [
@@ -398,31 +431,42 @@ export function AllianceHub({
       ]),
     );
     const capturedState = result.stateSnapshot;
-    const hasStateUpdate = Boolean(
-      capturedState || playerKills.size || allianceKills.size,
+    const capturedPlayerPower = capturedState?.playerRanking.length
+      ? capturedState.playerRanking
+      : [];
+    const capturedAlliancePower = capturedState?.allianceRanking.length
+      ? capturedState.allianceRanking
+      : [];
+    const hasRosterUpdate = currentMembers.length > 0;
+    const hasPowerUpdate = Boolean(
+      capturedPlayerPower.length || capturedAlliancePower.length,
     );
-    const mergedStateSnapshot =
-      hasStateUpdate && (capturedState || previousStateSnapshot)
-        ? {
-            id: result.capturedAt,
-            capturedAt: result.capturedAt,
-            playerRanking: (capturedState?.playerRanking.length
-              ? capturedState.playerRanking
-              : (previousStateSnapshot?.playerRanking ?? [])
-            ).map((row) => ({
-              ...row,
-              totalKills: playerKills.get(row.uid) ?? row.totalKills,
-            })),
-            allianceRanking: (capturedState?.allianceRanking.length
-              ? capturedState.allianceRanking
-              : (previousStateSnapshot?.allianceRanking ?? [])
-            ).map((row) => ({
-              ...row,
-              totalKills: allianceKills.get(row.uid) ?? row.totalKills,
-            })),
-          }
-        : undefined;
-    const detectedAt = mergedStateSnapshot?.capturedAt ?? result.capturedAt;
+    const statePatches = new Map<string, StateSnapshot>();
+    const patchSnapshot = (
+      base: StateSnapshot | undefined,
+      patch: (snapshot: StateSnapshot) => StateSnapshot,
+    ) => {
+      if (!base) return;
+      const current = statePatches.get(base.id) ?? structuredClone(base);
+      statePatches.set(base.id, patch(current));
+    };
+    if (playerKills.size && !capturedPlayerPower.length)
+      patchSnapshot(previousPlayerState, (snapshot) => ({
+        ...snapshot,
+        playerRanking: snapshot.playerRanking.map((row) => ({
+          ...row,
+          totalKills: playerKills.get(row.uid) ?? row.totalKills,
+        })),
+      }));
+    if (allianceKills.size && !capturedAlliancePower.length)
+      patchSnapshot(previousAllianceState, (snapshot) => ({
+        ...snapshot,
+        allianceRanking: snapshot.allianceRanking.map((row) => ({
+          ...row,
+          totalKills: allianceKills.get(row.uid) ?? row.totalKills,
+        })),
+      }));
+    const detectedAt = result.capturedAt;
     const newChanges = reliableRoster
       ? [
           ...currentMembers
@@ -454,22 +498,33 @@ export function AllianceHub({
     const historyCutoff =
       new Date(detectedAt).getTime() - 90 * 24 * 60 * 60 * 1000;
     const membershipChanges = [
-      ...(snapshots[0]?.membershipChanges ?? []).filter(
+      ...(previousAllianceSnapshot?.membershipChanges ?? []).filter(
         (change) => new Date(change.detectedAt).getTime() >= historyCutoff,
       ),
       ...newChanges,
     ].slice(-200);
-    setPendingRoster(entries);
-    setPendingStateSnapshot({
-      ...(mergedStateSnapshot ?? {
-        id: result.capturedAt,
-        capturedAt: result.capturedAt,
-        playerRanking: [],
-        allianceRanking: [],
-      }),
-      allianceMembers: currentMembers.length ? currentMembers : previousMembers,
-      membershipChanges,
-    });
+    setPendingRoster(hasRosterUpdate ? entries : []);
+    setPendingHasRosterUpdate(hasRosterUpdate);
+    setPendingStatePatches([...statePatches.values()]);
+    setPendingStateSnapshot(
+      hasRosterUpdate || hasPowerUpdate
+        ? {
+            id: result.capturedAt,
+            capturedAt: result.capturedAt,
+            playerRanking: capturedPlayerPower.map((row) => ({
+              ...row,
+              totalKills: playerKills.get(row.uid) ?? row.totalKills,
+            })),
+            allianceRanking: capturedAlliancePower.map((row) => ({
+              ...row,
+              totalKills: allianceKills.get(row.uid) ?? row.totalKills,
+            })),
+            ...(hasRosterUpdate
+              ? { allianceMembers: currentMembers, membershipChanges }
+              : {}),
+          }
+        : undefined,
+    );
     setSyncMatches({});
     onGameDataOpenChange(false);
     setSyncReviewOpen(true);
@@ -478,7 +533,7 @@ export function AllianceHub({
       matchedGamePlayer(players, entry.name, entry.uid),
     ).length;
     setSyncMessage(
-      `Read ${entries.length} alliance members · ${exact} matched by UID/name${mergedStateSnapshot ? ` · ${mergedStateSnapshot.playerRanking.length} state players · ${mergedStateSnapshot.allianceRanking.length} alliances` : ""}.`,
+      `Read ${hasRosterUpdate ? entries.length : 0} alliance members · ${exact} matched by UID/name · ${capturedPlayerPower.length} State power rows · ${playerKills.size} player kill rows · ${capturedAlliancePower.length} alliance power rows.`,
     );
   };
   const finishGameSync = async () => {
@@ -526,6 +581,7 @@ export function AllianceHub({
       (pendingStateSnapshot?.allianceMembers ?? []).map((member) => member.uid),
     );
     if (
+      pendingHasRosterUpdate &&
       previousMembers.length > 0 &&
       currentUids.size >= previousMembers.length * 0.75
     )
@@ -534,45 +590,89 @@ export function AllianceHub({
           .filter((member) => !currentUids.has(member.uid))
           .map((member) => member.uid),
       );
-    const summary = syncGameRoster(selected, syncMatches);
-    if (pendingStateSnapshot)
-      void db.stateSnapshots
-        .put(pendingStateSnapshot)
+    const summary = pendingHasRosterUpdate
+      ? syncGameRoster(selected, syncMatches)
+      : { added: 0, updated: 0, skipped: 0, aliased: 0 };
+    const snapshotsToSave = [
+      ...pendingStatePatches,
+      ...(pendingStateSnapshot ? [pendingStateSnapshot] : []),
+    ];
+    if (snapshotsToSave.length)
+      void db
+        .transaction("rw", db.stateSnapshots, async () => {
+          await db.stateSnapshots.bulkPut(snapshotsToSave);
+        })
         .then(() => window.dispatchEvent(new Event("planner-local-change")));
     setSyncReviewOpen(false);
     setSyncMessage(
-      `Sync complete · ${summary.added} added · ${summary.updated} members updated${summary.aliased ? ` · ${summary.aliased} renamed` : ""}${pendingStateSnapshot ? " · State snapshot saved" : ""}.`,
+      `Sync complete · ${summary.added} added · ${summary.updated} members updated${summary.aliased ? ` · ${summary.aliased} renamed` : ""}${snapshotsToSave.length ? ` · ${snapshotsToSave.length} data update${snapshotsToSave.length === 1 ? "" : "s"} saved` : ""}.`,
     );
   };
-  const snapshotRows = (snapshot?: StateSnapshot) =>
-    snapshot?.allianceMembers?.length
-      ? snapshot.allianceMembers
-      : (snapshot?.playerRanking ?? []);
-  const latestByUid = useMemo(
-    () => new Map(snapshotRows(snapshots[0]).map((row) => [row.uid, row])),
+  const allianceSnapshots = useMemo(
+    () => distinctAllianceSnapshots(snapshots),
     [snapshots],
   );
-  const previousByUid = useMemo(
-    () => new Map(snapshotRows(snapshots[1]).map((row) => [row.uid, row])),
+  const playerStateSnapshots = useMemo(
+    () => distinctPlayerStateSnapshots(snapshots),
     [snapshots],
+  );
+  const fallbackComparisonSnapshot = useMemo(() => {
+    if (allianceSnapshots[1]) return allianceSnapshots[1];
+    const latestAllianceTime = allianceSnapshots[0]
+      ? new Date(allianceSnapshots[0].capturedAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    return playerStateSnapshots.find(
+      (snapshot) =>
+        new Date(snapshot.capturedAt).getTime() < latestAllianceTime,
+    );
+  }, [allianceSnapshots, playerStateSnapshots]);
+  const latestByUid = useMemo(
+    () =>
+      new Map(
+        (allianceSnapshots[0]?.allianceMembers ?? []).map((row) => [
+          row.uid,
+          row,
+        ]),
+      ),
+    [allianceSnapshots],
+  );
+  const previousByUid = useMemo(
+    () =>
+      new Map(
+        (fallbackComparisonSnapshot?.allianceMembers?.length
+          ? fallbackComparisonSnapshot.allianceMembers
+          : (fallbackComparisonSnapshot?.playerRanking ?? [])
+        ).map((row) => [row.uid, row]),
+      ),
+    [fallbackComparisonSnapshot],
   );
   const latestStateByUid = useMemo(
     () =>
-      new Map((snapshots[0]?.playerRanking ?? []).map((row) => [row.uid, row])),
-    [snapshots],
+      new Map(
+        (playerStateSnapshots[0]?.playerRanking ?? []).map((row) => [
+          row.uid,
+          row,
+        ]),
+      ),
+    [playerStateSnapshots],
   );
   const previousStateByUid = useMemo(
     () =>
-      new Map((snapshots[1]?.playerRanking ?? []).map((row) => [row.uid, row])),
-    [snapshots],
+      new Map(
+        (playerStateSnapshots[1]?.playerRanking ?? []).map((row) => [
+          row.uid,
+          row,
+        ]),
+      ),
+    [playerStateSnapshots],
   );
   const movementHistory = useMemo(
     () =>
-      [...(snapshots[0]?.membershipChanges ?? [])].sort(
+      [...(allianceSnapshots[0]?.membershipChanges ?? [])].sort(
         (a, b) =>
           new Date(b.detectedAt).getTime() - new Date(a.detectedAt).getTime(),
       ),
-    [snapshots],
+    [allianceSnapshots],
   );
   const trackedFormerMembers = useMemo(() => {
     const latestChange = new Map<string, (typeof movementHistory)[number]>();
@@ -891,6 +991,11 @@ export function AllianceHub({
             )}
           </header>
           <p>{syncMessage}</p>
+          <p className="helper">
+            One Game Data JSON can contain Alliance and State sections. Only
+            sections present in the file are updated; missing sections remain
+            unchanged.
+          </p>
           {syncState === "disconnected" && (
             <a
               className="btn btn-secondary wide"
@@ -921,7 +1026,7 @@ export function AllianceHub({
           )}
           <label className="btn btn-secondary wide game-sync-file">
             <Upload />
-            Load saved game data
+            Load one Game Data JSON
             <input
               type="file"
               accept=".json,application/json"
@@ -934,99 +1039,117 @@ export function AllianceHub({
       <Modal
         open={syncReviewOpen}
         onOpenChange={setSyncReviewOpen}
-        title="Review Dark War alliance sync"
+        title="Review Game Data update"
         wide
       >
         <div className="sync-review">
           <p>
-            Members are matched by permanent User ID first. Game name, R1–R5
-            rank, Main Building Level, gender and total power will be refreshed.
-            Manual formation and Franky participation data stays unchanged.
+            Alliance members, State power and State kills are applied
+            independently. A missing category will not replace existing data.
           </p>
           <div className="sync-review-summary">
-            <Badge tone="green">
-              {pendingRoster.filter(isProfileAlliance).length} alliance members
-            </Badge>
-            <Badge tone="blue">
-              {
-                pendingRoster.filter(
-                  (entry) =>
-                    entry.uid &&
-                    matchedGamePlayer(players, entry.name, entry.uid),
-                ).length
-              }{" "}
-              UID matches
-            </Badge>
-            {pendingStateSnapshot && (
-              <Badge tone="amber">
-                State: {pendingStateSnapshot.playerRanking.length} players ·{" "}
-                {pendingStateSnapshot.allianceRanking.length} alliances
-              </Badge>
+            {pendingHasRosterUpdate && (
+              <>
+                <Badge tone="green">
+                  {pendingRoster.filter(isProfileAlliance).length} alliance
+                  members
+                </Badge>
+                <Badge tone="blue">
+                  {
+                    pendingRoster.filter(
+                      (entry) =>
+                        entry.uid &&
+                        matchedGamePlayer(players, entry.name, entry.uid),
+                    ).length
+                  }{" "}
+                  UID matches
+                </Badge>
+              </>
+            )}
+            {pendingStateSnapshot &&
+              (pendingStateSnapshot.playerRanking.length > 0 ||
+                pendingStateSnapshot.allianceRanking.length > 0) && (
+                <Badge tone="amber">
+                  State: {pendingStateSnapshot.playerRanking.length} players ·{" "}
+                  {pendingStateSnapshot.allianceRanking.length} alliances
+                </Badge>
+              )}
+            {pendingStatePatches.length > 0 && (
+              <Badge tone="blue">State kills: existing snapshot only</Badge>
             )}
           </div>
-          <div className="sync-review-head">
-            <span>Rank</span>
-            <span>Game player</span>
-            <span>HQ</span>
-            <span>Power</span>
-            <span>UID match</span>
-          </div>
-          <div className="sync-review-list">
-            {pendingRoster.map((entry) => {
-              const own = isProfileAlliance(entry),
-                automatic = own
-                  ? matchedGamePlayer(players, entry.name, entry.uid)
-                  : undefined,
-                key = entry.uid ?? entry.name;
-              return (
-                <div
-                  key={key}
-                  className={
-                    automatic
-                      ? "matched"
-                      : own
-                        ? "own-alliance"
-                        : "other-alliance"
-                  }
-                >
-                  <b>{entry.allianceRank ?? `#${entry.rank}`}</b>
-                  <strong>{entry.name}</strong>
-                  <span>Lv. {entry.mainBuildingLevel ?? "—"}</span>
-                  <span>{formatPower(entry.power)}</span>
-                  {automatic ? (
-                    <span className="sync-auto-match">
-                      <Link2 />
-                      {automatic.name}
-                    </span>
-                  ) : own ? (
-                    <NativeSelect
-                      value={syncMatches[key] ?? "new"}
-                      onChange={(event) =>
-                        setSyncMatches((value) => ({
-                          ...value,
-                          [key]: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="new">Add as new member</option>
-                      <option value="skip">Skip this player</option>
-                      <optgroup label="Match existing member">
-                        {[...players]
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((player) => (
-                            <option key={player.id} value={player.id}>
-                              {player.name} · {formatPower(player.totalPower)}
-                            </option>
-                          ))}
-                      </optgroup>
-                    </NativeSelect>
-                  ) : (
-                    <span>Skipped: other alliance</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {pendingHasRosterUpdate && (
+            <div className="sync-review-head">
+              <span>Rank</span>
+              <span>Game player</span>
+              <span>HQ</span>
+              <span>Power</span>
+              <span>UID match</span>
+            </div>
+          )}
+          {pendingHasRosterUpdate ? (
+            <div className="sync-review-list">
+              {pendingRoster.map((entry) => {
+                const own = isProfileAlliance(entry),
+                  automatic = own
+                    ? matchedGamePlayer(players, entry.name, entry.uid)
+                    : undefined,
+                  key = entry.uid ?? entry.name;
+                return (
+                  <div
+                    key={key}
+                    className={
+                      automatic
+                        ? "matched"
+                        : own
+                          ? "own-alliance"
+                          : "other-alliance"
+                    }
+                  >
+                    <b>{entry.allianceRank ?? `#${entry.rank}`}</b>
+                    <strong>{entry.name}</strong>
+                    <span>Lv. {entry.mainBuildingLevel ?? "—"}</span>
+                    <span>{formatPower(entry.power)}</span>
+                    {automatic ? (
+                      <span className="sync-auto-match">
+                        <Link2 />
+                        {automatic.name}
+                      </span>
+                    ) : own ? (
+                      <NativeSelect
+                        value={syncMatches[key] ?? "new"}
+                        onChange={(event) =>
+                          setSyncMatches((value) => ({
+                            ...value,
+                            [key]: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="new">Add as new member</option>
+                        <option value="skip">Skip this player</option>
+                        <optgroup label="Match existing member">
+                          {[...players]
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((player) => (
+                              <option key={player.id} value={player.id}>
+                                {player.name} · {formatPower(player.totalPower)}
+                              </option>
+                            ))}
+                        </optgroup>
+                      </NativeSelect>
+                    ) : (
+                      <span>Skipped: other alliance</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="sync-review-empty">
+              No Alliance roster was included. Existing Alliance members will
+              not be changed.
+            </div>
+          )}
           <div className="sync-review-actions">
             <span />
             <Button
