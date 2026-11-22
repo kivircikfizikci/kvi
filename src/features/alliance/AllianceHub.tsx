@@ -86,10 +86,20 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
   const weeklyBaseline = available.find(
     (snapshot) => new Date(snapshot.capturedAt).getTime() <= weekTarget,
   );
-  const baseline = weeklyBaseline ?? available[available.length - 1];
+  const fallbackBaseline = snapshots.find(
+    (snapshot) =>
+      snapshot.id !== latest.id &&
+      Boolean(
+        snapshot.allianceMembers?.length || snapshot.playerRanking.length,
+      ),
+  );
+  const baseline = weeklyBaseline ?? available[1] ?? fallbackBaseline;
   const hasComparison = Boolean(baseline && baseline.id !== latest.id);
   const currentMembers = latest.allianceMembers;
-  const baselineMembers = baseline?.allianceMembers ?? [];
+  const hasFullRosterBaseline = Boolean(baseline?.allianceMembers?.length);
+  const baselineMembers = hasFullRosterBaseline
+    ? baseline!.allianceMembers!
+    : (baseline?.playerRanking ?? []);
   const baselineByUid = new Map(
     baselineMembers.map((member) => [member.uid, member]),
   );
@@ -101,9 +111,26 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
     (total, member) => total + member.power,
     0,
   );
-  const totalChange = hasComparison
-    ? ((totalPower - baselineTotal) / Math.max(1, baselineTotal)) * 100
-    : null;
+  const matchedCurrentMembers = currentMembers.filter((member) =>
+    baselineByUid.has(member.uid),
+  );
+  const matchedCurrentTotal = matchedCurrentMembers.reduce(
+    (total, member) => total + member.power,
+    0,
+  );
+  const matchedBaselineTotal = matchedCurrentMembers.reduce(
+    (total, member) => total + (baselineByUid.get(member.uid)?.power ?? 0),
+    0,
+  );
+  const powerGained = hasFullRosterBaseline
+    ? totalPower - baselineTotal
+    : matchedCurrentTotal - matchedBaselineTotal;
+  const totalChange =
+    hasComparison && matchedCurrentMembers.length
+      ? ((matchedCurrentTotal - matchedBaselineTotal) /
+          Math.max(1, matchedBaselineTotal)) *
+        100
+      : null;
   const memberGrowth = currentMembers
     .map((member) => {
       const before = baselineByUid.get(member.uid);
@@ -192,15 +219,17 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
         </article>
         <article>
           <span>Power gained</span>
-          <strong
-            className={
-              totalPower - baselineTotal >= 0 ? "positive" : "negative"
-            }
-          >
-            {hasComparison && totalPower - baselineTotal >= 0 ? "+" : ""}
-            {hasComparison ? formatPower(totalPower - baselineTotal) : "—"}
+          <strong className={powerGained >= 0 ? "positive" : "negative"}>
+            {hasComparison && powerGained >= 0 ? "+" : ""}
+            {hasComparison ? formatPower(powerGained) : "—"}
           </strong>
-          <small>Includes joins and departures</small>
+          <small>
+            {hasFullRosterBaseline
+              ? "Includes joins and departures"
+              : hasComparison
+                ? `${matchedCurrentMembers.length} members matched to prior State data`
+                : "Waiting for comparison"}
+          </small>
         </article>
         <article>
           <span>Tracked updates</span>

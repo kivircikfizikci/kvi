@@ -95,8 +95,17 @@ export function StateHub() {
     window.addEventListener("planner-local-change", load);
     return () => window.removeEventListener("planner-local-change", load);
   }, []);
-  const latest = snapshots[0],
-    previous = snapshots[1],
+  const rankingSnapshots = useMemo(
+      () =>
+        snapshots.filter(
+          (snapshot) =>
+            snapshot.playerRanking.length > 0 ||
+            snapshot.allianceRanking.length > 0,
+        ),
+      [snapshots],
+    ),
+    latest = rankingSnapshots[0],
+    previous = rankingSnapshots[1],
     sexByUid = useMemo(
       () =>
         new Map(
@@ -125,7 +134,7 @@ export function StateHub() {
   );
   const selectedHistory = useMemo(
     () =>
-      snapshots
+      rankingSnapshots
         .map((snapshot) => {
           const row = snapshot.playerRanking.find(
             (player) => player.uid === selectedUid,
@@ -145,7 +154,7 @@ export function StateHub() {
             point != null,
         )
         .reverse(),
-    [snapshots, selectedUid],
+    [rankingSnapshots, selectedUid],
   );
   const onSort = (key: SortKey) => {
     if (sort === key)
@@ -230,7 +239,8 @@ export function StateHub() {
           <div>
             <strong>{new Date(latest.capturedAt).toLocaleString()}</strong>
             <small>
-              {snapshots.length} saved update{snapshots.length === 1 ? "" : "s"}
+              {rankingSnapshots.length} saved update
+              {rankingSnapshots.length === 1 ? "" : "s"}
             </small>
           </div>
         )}

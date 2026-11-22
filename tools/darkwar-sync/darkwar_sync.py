@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import socket
 import sqlite3
 import struct
 import subprocess
@@ -150,6 +151,119 @@ def game_server_addresses() -> list[str]:
         except (ValueError, IndexError):
             continue
     return sorted(addresses)
+
+
+def game_local_addresses() -> list[str]:
+    try:
+        output = run(["netstat", "-ano", "-p", "TCP"]).stdout
+    except SyncError:
+        return []
+    addresses = set()
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or not parts[0].upper().startswith("TCP"):
+            continue
+        try:
+            remote_host, remote_port = parts[2].rsplit(":", 1)
+            local_host, _local_port = parts[1].rsplit(":", 1)
+            remote_host = remote_host.strip("[]")
+            local_host = local_host.strip("[]")
+            if int(remote_port) == GAME_PORT:
+                ipaddress.ip_address(remote_host)
+                local_address = ipaddress.ip_address(local_host)
+                if local_address.version == 4 and not local_address.is_unspecified:
+                    addresses.add(str(local_address))
+        except (ValueError, IndexError):
+            continue
+    return sorted(addresses)
+
+
+def write_raw_ip_pcapng(path: Path, packets: list[tuple[int, bytes]]):
+    with path.open("wb") as handle:
+        handle.write(struct.pack("<IIIHHqI", 0x0A0D0D0A, 28, 0x1A2B3C4D, 1, 0, -1, 28))
+        handle.write(struct.pack("<IIHHII", 1, 20, 101, 0, 65535, 20))
+        for timestamp_us, packet in packets:
+            padding = (-len(packet)) % 4
+            block_length = 32 + len(packet) + padding
+            timestamp_high = (timestamp_us >> 32) & 0xFFFFFFFF
+            timestamp_low = timestamp_us & 0xFFFFFFFF
+            handle.write(struct.pack("<IIIIIII", 6, block_length, 0, timestamp_high, timestamp_low, len(packet), len(packet)))
+            handle.write(packet)
+            if padding:
+                handle.write(bytes(padding))
+            handle.write(struct.pack("<I", block_length))
+
+
+class RawIpCapture:
+    def __init__(self, path: Path):
+        self.path = path
+        self.running = False
+        self.sockets: list[socket.socket] = []
+        self.threads: list[threading.Thread] = []
+        self.packets: list[tuple[int, bytes]] = []
+        self.remote_addresses: set[bytes] = set()
+        self.total_bytes = 0
+        self.lock = threading.Lock()
+
+    def start(self, local_addresses: list[str], remote_addresses: list[str]) -> int:
+        self.packets = []
+        self.total_bytes = 0
+        self.remote_addresses = {ipaddress.ip_address(value).packed for value in remote_addresses}
+        self.running = True
+        for address in local_addresses:
+            capture_socket = None
+            try:
+                capture_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IP)
+                capture_socket.bind((address, 0))
+                capture_socket.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+                capture_socket.ioctl(socket.SIO_RCVALL, socket.RCVALL_ON)
+                capture_socket.settimeout(0.5)
+                self.sockets.append(capture_socket)
+                thread = threading.Thread(target=self._read, args=(capture_socket,), daemon=True)
+                self.threads.append(thread)
+                thread.start()
+            except (OSError, AttributeError):
+                if capture_socket is not None:
+                    capture_socket.close()
+        if not self.sockets:
+            self.running = False
+        return len(self.sockets)
+
+    def _read(self, capture_socket: socket.socket):
+        while self.running:
+            try:
+                packet = capture_socket.recvfrom(65535)[0]
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            if len(packet) < 20 or packet[0] >> 4 != 4 or packet[9] != 6:
+                continue
+            if self.remote_addresses and packet[12:16] not in self.remote_addresses and packet[16:20] not in self.remote_addresses:
+                continue
+            with self.lock:
+                if self.total_bytes + len(packet) > 128 * 1024 * 1024:
+                    continue
+                self.packets.append((time.time_ns() // 1000, packet))
+                self.total_bytes += len(packet)
+
+    def stop(self) -> int:
+        self.running = False
+        for capture_socket in self.sockets:
+            try:
+                capture_socket.ioctl(socket.SIO_RCVALL, socket.RCVALL_OFF)
+            except (OSError, AttributeError):
+                pass
+            capture_socket.close()
+        for thread in self.threads:
+            thread.join(timeout=1)
+        self.sockets = []
+        self.threads = []
+        with self.lock:
+            packets = list(self.packets)
+        if packets:
+            write_raw_ip_pcapng(self.path, packets)
+        return len(packets)
 
 
 def pcapng_packets(path: Path):
@@ -539,18 +653,26 @@ def save_capture_diagnostics(etl: Path, pcap: Path) -> tuple[Path, Path]:
 class CaptureService:
     def __init__(self):
         self.directory = tempfile.TemporaryDirectory(prefix="kvi-darkwar-sync-")
-        self.etl, self.pcap = Path(self.directory.name) / "capture.etl", Path(self.directory.name) / "capture.pcapng"
+        self.etl = Path(self.directory.name) / "capture.etl"
+        self.pcap = Path(self.directory.name) / "capture.pcapng"
+        self.raw_pcap = Path(self.directory.name) / "raw-ip-capture.pcapng"
+        self.raw_capture = RawIpCapture(self.raw_pcap)
         self.capturing, self.lock = False, threading.Lock()
 
     def start(self):
         with self.lock:
             if self.capturing:
                 return
-            for path in (self.etl, self.pcap):
+            for path in (self.etl, self.pcap, self.raw_pcap):
                 if path.exists():
                     path.unlink()
             remove_capture_filter()
             server_addresses = game_server_addresses()
+            raw_sockets = self.raw_capture.start(game_local_addresses(), server_addresses)
+            if raw_sockets:
+                print(f"[RAW CAPTURE] Listening on {raw_sockets} game network interface.", flush=True)
+            else:
+                print("[RAW CAPTURE WARNING] Windows raw capture was unavailable; using PktMon fallback.", flush=True)
             if server_addresses:
                 for index, address in enumerate(server_addresses):
                     run(["pktmon", "filter", "add", f"KVI-DarkWar-{index + 1}", "-i", address, "-t", "TCP"])
@@ -561,6 +683,7 @@ class CaptureService:
             try:
                 run(["pktmon", "start", "--capture", "--comp", "all", "--pkt-size", "0", "--file-name", str(self.etl), "--file-size", "128", "--log-mode", "circular"])
             except Exception:
+                self.raw_capture.stop()
                 remove_capture_filter()
                 raise
             self.capturing = True
@@ -569,6 +692,7 @@ class CaptureService:
 
     def stop(self):
         with self.lock:
+            self.raw_capture.stop()
             if self.capturing:
                 try:
                     run(["pktmon", "stop"])
@@ -582,17 +706,20 @@ class CaptureService:
                 raise SyncError("Capture is not running. Click Start capture first.")
             print("[FINALIZING] Waiting for in-flight game responses...", flush=True)
             time.sleep(3)
+            raw_packet_count = self.raw_capture.stop()
             try:
                 run(["pktmon", "stop"])
             finally:
                 self.capturing = False
                 remove_capture_filter()
             run(["pktmon", "etl2pcap", str(self.etl), "--out", str(self.pcap)])
-            etl_path, pcap_path = save_capture_diagnostics(self.etl, self.pcap)
+            parse_pcap = self.raw_pcap if raw_packet_count and self.raw_pcap.is_file() else self.pcap
+            etl_path, pcap_path = save_capture_diagnostics(self.etl, parse_pcap)
+            print(f"[CAPTURE SOURCE] {'Raw IP' if parse_pcap == self.raw_pcap else 'PktMon'} · {raw_packet_count} raw packets", flush=True)
             print(f"[RAW SAVED] {pcap_path}", flush=True)
             try:
                 analysis_archive = {}
-                result = extract_game_data(self.pcap, allow_partial=True, analysis_archive=analysis_archive)
+                result = extract_game_data(parse_pcap, allow_partial=True, analysis_archive=analysis_archive)
             except Exception as error:
                 failure = {
                     "source": "dark-war-game-data-error",
