@@ -55,6 +55,6 @@ export interface MapTower { id: string; playerId?: string; name: string; x: numb
 export interface AllianceProfile { id: 'primary'; name: string; tag: string; state: string; updatedAt: string }
 export type OfficerNoteStatus = 'requested' | 'planned' | 'done'
 export interface OfficerNote { id: string; title: string; details: string; status: OfficerNoteStatus; createdBy: string; createdAt: string; updatedAt: string }
-export interface StatePlayerRanking { uid:string; name:string; rank:number; power:number; level:number|null; allianceName:string; allianceTag:string; country?:string }
+export interface StatePlayerRanking { uid:string; name:string; rank:number; power:number; totalKills?:number|null; sex?:0|1|2|null; level:number|null; allianceName:string; allianceTag:string; country?:string }
 export interface StateAllianceRanking { uid:string; name:string; tag:string; rank:number; power:number; leader:string; currentMembers:number; maxMembers:number; country?:string }
 export interface StateSnapshot { id:string; capturedAt:string; playerRanking:StatePlayerRanking[]; allianceRanking:StateAllianceRanking[] }

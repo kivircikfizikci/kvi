@@ -5,7 +5,7 @@ This optional Windows helper passively reads visible Dark War game responses for
 ## Data collected
 
 - Alliance members: permanent UID, current game name, R1-R5 rank, total power, Main Building Level, gender and country.
-- State player power ranking: first 150 players, alliance, building level and total power.
+- State player ranking: first 150 players, alliance, building level, total power and any available gender/kill data.
 - State alliance power ranking: alliance name/tag, leader, member count, total power and rank.
 
 Country is stored for future use but is not currently displayed. Gender is game-managed and cannot be edited in the planner. Manual F1-F4 formation data and Franky participation are preserved during sync.
