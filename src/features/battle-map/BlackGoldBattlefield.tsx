@@ -81,7 +81,7 @@ export function BlackGoldBattlefield({canEdit=true}:{canEdit?:boolean}){
 
   return <main className="battle-shell bgb-shell">
     <aside className="map-sidebar bgb-sidebar">
-      <header><p className="eyebrow">Black Gold Battlefield</p><h2>{team.name} Plan</h2><span>149×149 tactical grid · 3×3 shelters</span></header>
+      <header><p className="eyebrow">Black Gold Battlefield</p><h2>{team.name} Plan</h2></header>
       <div className="bgb-team-tabs">{teams.map(item=><button key={item.id} className={item.id===activeTeamId?'active':''} onClick={()=>setActiveTeamId(item.id)}><span>{item.name}</span><small>{item.eventTime||'Time not set'}</small></button>)}</div>
       <section className="bgb-event-time"><label><Clock3/>Event time<Input disabled={!canEdit} type="time" value={team.eventTime} onChange={event=>updateTeam(activeTeamId,value=>({...value,eventTime:event.target.value}))}/></label><div><Badge tone={activeParticipants.length===20?'green':'blue'}>{activeParticipants.length}/20 active</Badge><Badge tone={reserveParticipants.length===10?'amber':'muted'}>{reserveParticipants.length}/10 reserve</Badge></div></section>
       <div className={`mode-switch ${canEdit?'':'read-only'}`}><button className={mode==='view'?'active':''} onClick={()=>setMode('view')}><MousePointer2/>View</button>{canEdit&&<><button className={mode==='edit'?'active':''} onClick={()=>setMode('edit')}><Pencil/>Move</button><button className={mode==='place'?'active':''} disabled={!selected||selected.role!=='active'} onClick={()=>selected&&armPlacement(selected)}><Plus/>Place</button></>}</div>

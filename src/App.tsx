@@ -144,6 +144,8 @@ export default function App() {
   const localSnapshotRef = useRef<CloudSnapshot | null>(null);
   const revisionRef = useRef(0);
   const cloudSaveTimer = useRef<number | undefined>(undefined);
+  const cloudSaveInFlight = useRef(false);
+  const cloudSavePending = useRef(false);
   const openModule = (id: PlannerModuleId) => {
     setActiveModule(id);
     window.history.replaceState({}, "", moduleUrl(id));
@@ -242,39 +244,48 @@ export default function App() {
   }, [loaded, setCloudCanEdit]);
   useEffect(() => {
     if (!canEdit || !cloud.token) return;
+    const flushSave = async () => {
+      if (cloudSaveInFlight.current) return;
+      cloudSaveInFlight.current = true;
+      try {
+        while (cloudSavePending.current) {
+          cloudSavePending.current = false;
+          const snapshot = await collectCloudSnapshot(),
+            result = await saveCloudState(
+              cloud.token,
+              snapshot,
+              revisionRef.current,
+            );
+          revisionRef.current = result.revision;
+          setCloud((value) => ({
+            ...value,
+            revision: result.revision,
+            hasData: true,
+            error: null,
+          }));
+        }
+      } catch (err) {
+        cloudSavePending.current = false;
+        const message =
+          err instanceof Error ? err.message : "Cloud save failed.";
+        setCloud((value) => ({ ...value, error: message }));
+        setError(message);
+      } finally {
+        cloudSaveInFlight.current = false;
+      }
+    };
     const save = () => {
       window.clearTimeout(cloudSaveTimer.current);
-      cloudSaveTimer.current = window.setTimeout(
-        () =>
-          void (async () => {
-            try {
-              const snapshot = await collectCloudSnapshot(),
-                result = await saveCloudState(
-                  cloud.token,
-                  snapshot,
-                  revisionRef.current,
-                );
-              revisionRef.current = result.revision;
-              setCloud((value) => ({
-                ...value,
-                revision: result.revision,
-                hasData: true,
-                error: null,
-              }));
-            } catch (err) {
-              const message =
-                err instanceof Error ? err.message : "Cloud save failed.";
-              setCloud((value) => ({ ...value, error: message }));
-              setError(message);
-            }
-          })(),
-        350,
-      );
+      cloudSaveTimer.current = window.setTimeout(() => {
+        cloudSavePending.current = true;
+        void flushSave();
+      }, 350);
     };
     window.addEventListener("planner-local-change", save);
     return () => {
       window.removeEventListener("planner-local-change", save);
       window.clearTimeout(cloudSaveTimer.current);
+      cloudSavePending.current = false;
     };
   }, [canEdit, cloud.token, setError]);
   const login = async (uid: string, remember: boolean) => {
