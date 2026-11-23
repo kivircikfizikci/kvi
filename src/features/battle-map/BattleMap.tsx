@@ -8,12 +8,13 @@ import type { MapTower } from '../../types'
 import { formatPower, now, uid } from '../../utils/format'
 import { clampCoordinate, exportCamera, isPanChord, type Camera, TILE_HEIGHT, TILE_WIDTH, towerAtScreenPoint, unproject, validateTowerPosition } from './mapGeometry'
 import { renderBattleMap } from './mapRenderer'
+import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import './battle-map.css'
 
 type Mode = 'view' | 'edit' | 'add'
 const colors = ['#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24', '#60a5fa', '#f97316', '#22d3ee']
 
-export function BattleMap({canEdit=true}:{canEdit?:boolean}) {
+function CapitalClashMap({canEdit=true}:{canEdit?:boolean}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ type: 'pending' | 'pan' | 'tower'; sx: number; sy: number; camera: Camera; moved: boolean; towerId?: string; offsetX?: number; offsetY?: number } | null>(null)
@@ -72,4 +73,15 @@ export function BattleMap({canEdit=true}:{canEdit?:boolean}) {
     </main>
     <Modal open={quickPlaceOpen} onOpenChange={open => { setQuickPlaceOpen(open); if (!open) setQuickPlaceError(null) }} title="Place tower"><div className="quick-place-form"><p>Select an unplaced player from the shared alliance roster. The held coordinate is the center tile.</p>{quickPlaceError && <div className="map-message">{quickPlaceError}</div>}<PlayerSelect value={draft.playerId} excludeIds={placedPlayerIds} onChange={playerId => { const player = playerById.get(playerId); setDraft({ ...draft, playerId, name: player?.name ?? draft.name }) }} /><label>Name<Input autoFocus={!draft.playerId} disabled={Boolean(draft.playerId)} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder={`Tower ${towers.length + 1}`} /></label><div className="quick-place-coordinates"><label>X<Input type="number" min="1" max="998" value={draft.x} onChange={event => setDraft({ ...draft, x: event.target.value })} /></label><label>Y<Input type="number" min="1" max="998" value={draft.y} onChange={event => setDraft({ ...draft, y: event.target.value })} /></label></div><div className="quick-place-actions"><Button variant="secondary" onClick={() => setQuickPlaceOpen(false)}>Cancel</Button><Button onClick={placeQuickTower}><MapPinned />Place tower</Button></div></div></Modal>
   </>
+}
+
+export function BattleMap({canEdit=true}:{canEdit?:boolean}) {
+  const [battlefield, setBattlefield] = useState<'capital'|'black-gold'>('capital')
+  return <div className="battle-map-page">
+    <nav className="battlefield-switch" aria-label="Battlefield type">
+      <button className={battlefield==='capital'?'active':''} onClick={()=>setBattlefield('capital')}>Capital Clash</button>
+      <button className={battlefield==='black-gold'?'active':''} onClick={()=>setBattlefield('black-gold')}>Black Gold Battlefield</button>
+    </nav>
+    {battlefield==='capital'?<CapitalClashMap canEdit={canEdit}/>:<BlackGoldBattlefield canEdit={canEdit}/>}
+  </div>
 }

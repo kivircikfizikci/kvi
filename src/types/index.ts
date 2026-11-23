@@ -80,6 +80,26 @@ export interface MapTower {
   createdAt: string;
   updatedAt: string;
 }
+export type BlackGoldTeamId = "team-a" | "team-b";
+export type BlackGoldParticipantRole = "active" | "reserve";
+export interface BlackGoldParticipant {
+  id: string;
+  playerId?: string;
+  name: string;
+  role: BlackGoldParticipantRole;
+  x?: number;
+  y?: number;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface BlackGoldTeam {
+  id: BlackGoldTeamId;
+  name: string;
+  eventTime: string;
+  participants: BlackGoldParticipant[];
+  updatedAt: string;
+}
 export interface AllianceProfile {
   id: "primary";
   name: string;

@@ -1,10 +1,11 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AllianceProfile, MapTower, OfficerNote, Plan, Player, StateSnapshot } from '../types'
+import type { AllianceProfile, BlackGoldTeam, MapTower, OfficerNote, Plan, Player, StateSnapshot } from '../types'
 
 class PlannerDatabase extends Dexie {
   players!: EntityTable<Player, 'id'>
   plans!: EntityTable<Plan, 'id'>
   mapTowers!: EntityTable<MapTower, 'id'>
+  blackGoldTeams!: EntityTable<BlackGoldTeam, 'id'>
   allianceProfiles!: EntityTable<AllianceProfile, 'id'>
   officerNotes!: EntityTable<OfficerNote, 'id'>
   stateSnapshots!: EntityTable<StateSnapshot, 'id'>
@@ -16,6 +17,7 @@ class PlannerDatabase extends Dexie {
     this.version(3).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt' })
     this.version(4).stores({ players: 'id, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt', officerNotes: 'id, status, updatedAt' })
     this.version(5).stores({ players: 'id, uid, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt', officerNotes: 'id, status, updatedAt', stateSnapshots: 'id, capturedAt' })
+    this.version(6).stores({ players: 'id, uid, name, totalPower, availability, active', plans: 'id, name, updatedAt', mapTowers: 'id, name, x, y, updatedAt', blackGoldTeams: 'id, updatedAt', allianceProfiles: 'id, name, tag, state, updatedAt', officerNotes: 'id, status, updatedAt', stateSnapshots: 'id, capturedAt' })
   }
 }
 export const db = new PlannerDatabase()
