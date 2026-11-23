@@ -92,10 +92,11 @@
 .alliance-growth > header h3 {
   margin: 4px 0 0;
 }
-.alliance-growth > header > span {
-  color: var(--muted);
-  font-size: 0.76rem;
-}
+.growth-period-picker { display: flex; align-items: flex-end; flex-direction: column; gap: 6px; }
+.growth-period-picker > div { display: flex; gap: 4px; }
+.growth-period-picker button { min-width: 38px; height: 28px; border: 1px solid #344154; border-radius: 5px; background: #111923; color: #8794a7; font-size: .68rem; font-weight: 800; }
+.growth-period-picker button.active { border-color: var(--orange); background: #2b1c14; color: #ffd1b4; }
+.growth-period-picker > span { color: var(--muted); font-size: .7rem; }
 .growth-summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -157,16 +158,25 @@
   color: var(--muted);
   font-size: 0.68rem;
 }
-.growth-leaderboard > div > div {
+.growth-leaderboard > div > button {
   display: grid;
   grid-template-columns: 28px minmax(130px, 1fr) 80px;
   align-items: center;
   gap: 8px;
+  width: 100%;
   min-height: 48px;
   padding: 7px 14px;
   border-bottom: 1px solid #202936;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
 }
-.growth-leaderboard > div > div:last-child {
+.growth-leaderboard > div > button:hover { background: #121b27; }
+.growth-leaderboard > div > button.selected { background: #182333; box-shadow: inset 3px 0 var(--orange2); }
+.growth-leaderboard > div > button:last-child {
   border-bottom: 0;
 }
 .growth-leaderboard b {
@@ -196,6 +206,24 @@
 .growth-leaderboard > i.negative {
   background: var(--red);
 }
+.alliance-member-history { margin: 0 12px 12px; border: 1px solid #283344; border-radius: 8px; background: #0d131c; overflow: hidden; }
+.alliance-member-history > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 16px 18px 10px; }
+.alliance-member-history .eyebrow { display: flex; align-items: center; gap: 6px; }
+.alliance-member-history .eyebrow svg { width: 15px; height: 15px; }
+.alliance-member-history h3 { margin: 5px 0 3px; }
+.alliance-member-history header > div > span { color: var(--muted); font-size: .72rem; }
+.alliance-history-metrics { display: grid; grid-template-columns: repeat(4,minmax(95px,1fr)); gap: 7px; }
+.alliance-history-metrics > span { min-width: 100px; padding: 8px 10px; border: 1px solid #283344; border-radius: 7px; color: var(--muted); font-size: .65rem; }
+.alliance-history-metrics strong { display: block; margin-top: 4px; color: #e8edf5; font-size: .8rem; }
+.alliance-history-metrics strong.positive { color: var(--green); }
+.alliance-history-metrics strong.negative { color: var(--red); }
+.alliance-history-chart { padding: 0 18px 12px; }
+.alliance-history-chart svg { display: block; width: 100%; height: 150px; }
+.alliance-history-chart line { stroke: #253040; stroke-width: 1; stroke-dasharray: 4 6; }
+.alliance-history-chart polyline { fill: none; stroke: var(--orange2); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.alliance-history-chart circle { fill: #10151e; stroke: var(--orange2); stroke-width: 3; }
+.alliance-history-dates { display: flex; justify-content: space-between; color: var(--muted); font-size: .68rem; }
+.alliance-history-waiting { min-height: 120px; display: grid; place-items: center; color: var(--muted); font-size: .76rem; }
 .growth-empty {
   margin: 0;
   padding: 24px 14px;
@@ -282,6 +310,8 @@
   .growth-summary {
     grid-template-columns: 1fr 1fr;
   }
+  .alliance-member-history > header { flex-direction: column; }
+  .alliance-history-metrics { width: 100%; grid-template-columns: repeat(2,1fr); }
 }
 
 @media (max-width: 720px) {
@@ -322,4 +352,7 @@
   .growth-rankings {
     grid-template-columns: 1fr;
   }
+  .alliance-growth > header { align-items: flex-start; }
+  .growth-period-picker { align-items: flex-end; max-width: 58%; text-align: right; }
+  .alliance-history-metrics { grid-template-columns: 1fr 1fr; }
 }

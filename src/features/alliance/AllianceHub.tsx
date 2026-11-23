@@ -1,5 +1,6 @@
 import {
   Download,
+  History,
   Link2,
   LoaderCircle,
   Pencil,
@@ -36,6 +37,7 @@ import {
 } from "../players/AllianceRankBadge";
 import { frankyParticipationLabel } from "../players/availability";
 import { PlayerSexIcon } from "../players/PlayerSexIcon";
+import { isApproximateGrowthSnapshot, nearestGrowthSnapshot, type GrowthRangeDays } from "./growthPeriod";
 import {
   checkDarkWarSync,
   finishDarkWarCapture,
@@ -103,21 +105,23 @@ const distinctPlayerStateSnapshots = (snapshots: StateSnapshot[]) => {
 };
 
 function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
+  const [rangeDays, setRangeDays] = useState<GrowthRangeDays>(1);
+  const [selectedUid, setSelectedUid] = useState("");
   const available = distinctAllianceSnapshots(snapshots);
   const latest = available[0];
   if (!latest?.allianceMembers?.length) return null;
   const latestAt = new Date(latest.capturedAt).getTime();
-  const weekTarget = latestAt - 7 * 24 * 60 * 60 * 1000;
-  const weeklyBaseline = available.find(
-    (snapshot) => new Date(snapshot.capturedAt).getTime() <= weekTarget,
+  const baselineCandidates = [
+    ...available.slice(1),
+    ...distinctPlayerStateSnapshots(snapshots).filter(
+      (snapshot) => snapshot.id !== latest.id,
+    ),
+  ].filter(
+    (snapshot, index, rows) =>
+      new Date(snapshot.capturedAt).getTime() < latestAt &&
+      rows.findIndex((row) => row.id === snapshot.id) === index,
   );
-  const fallbackBaseline = snapshots.find(
-    (snapshot) =>
-      snapshot.id !== latest.id &&
-      !snapshot.allianceMembers?.length &&
-      snapshot.playerRanking.length > 0,
-  );
-  const baseline = weeklyBaseline ?? available[1] ?? fallbackBaseline;
+  const baseline = nearestGrowthSnapshot(baselineCandidates, latestAt, rangeDays);
   const hasComparison = Boolean(baseline && baseline.id !== latest.id);
   const currentMembers = latest.allianceMembers;
   const hasFullRosterBaseline = Boolean(baseline?.allianceMembers?.length);
@@ -177,11 +181,58 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
   const slowest = [...memberGrowth]
     .sort((a, b) => a.change - b.change)
     .slice(0, 5);
-  const periodLabel = weeklyBaseline
-    ? "Last 7 days"
-    : hasComparison
-      ? `Since ${new Date(baseline!.capturedAt).toLocaleString()}`
-      : "Waiting for comparison";
+  const approximate = isApproximateGrowthSnapshot(baseline, latestAt, rangeDays);
+  const rangeLabel = `${rangeDays} ${rangeDays === 1 ? "day" : "days"}`;
+  const periodLabel = !hasComparison
+    ? "Waiting for comparison"
+    : approximate
+      ? `Nearest available update · since ${new Date(baseline!.capturedAt).toLocaleString()}`
+      : `Last ${rangeLabel}`;
+  const selectedMember = currentMembers.find(
+    (member) => member.uid === selectedUid,
+  );
+  const selectedGrowth = memberGrowth.find(
+    (item) => item.member.uid === selectedUid,
+  );
+  const selectedHistory = selectedMember
+    ? snapshots
+        .map((snapshot) => {
+          const member =
+            snapshot.allianceMembers?.find(
+              (item) => item.uid === selectedMember.uid,
+            ) ??
+            snapshot.playerRanking.find(
+              (item) => item.uid === selectedMember.uid,
+            );
+          if (!member) return null;
+          const ranking = snapshot.playerRanking.find(
+            (item) => item.uid === selectedMember.uid,
+          );
+          return {
+            capturedAt: snapshot.capturedAt,
+            power: member.power,
+            rank: ranking?.rank ?? null,
+          };
+        })
+        .filter(
+          (
+            point,
+          ): point is { capturedAt: string; power: number; rank: number | null } =>
+            point != null,
+        )
+        .filter(
+          (point, index, rows) =>
+            rows.findIndex(
+              (row) =>
+                row.capturedAt === point.capturedAt && row.power === point.power,
+            ) === index,
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.capturedAt).getTime() -
+            new Date(b.capturedAt).getTime(),
+        )
+    : [];
   const GrowthList = ({
     title,
     rows,
@@ -200,7 +251,11 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
       </header>
       <div>
         {rows.map((item, index) => (
-          <div key={item.member.uid}>
+          <button
+            key={item.member.uid}
+            className={selectedUid === item.member.uid ? "selected" : ""}
+            onClick={() => setSelectedUid(item.member.uid)}
+          >
             <b>{index + 1}</b>
             <span>
               <strong>{item.member.name}</strong>
@@ -210,7 +265,7 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
               </small>
             </span>
             <PowerChange value={item.change} />
-          </div>
+          </button>
         ))}
         {!rows.length && (
           <p className="growth-empty">
@@ -228,7 +283,20 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
           <p className="eyebrow">Alliance growth</p>
           <h3>Growth overview</h3>
         </div>
-        <span>{periodLabel}</span>
+        <div className="growth-period-picker">
+          <div role="group" aria-label="Growth comparison period">
+            {([1, 3, 7] as const).map((days) => (
+              <button
+                key={days}
+                className={rangeDays === days ? "active" : ""}
+                onClick={() => setRangeDays(days)}
+              >
+                {days}D
+              </button>
+            ))}
+          </div>
+          <span>{periodLabel}</span>
+        </div>
       </header>
       <div className="growth-summary">
         <article>
@@ -272,6 +340,75 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
           rows={slowest}
           tone="negative"
         />
+      </div>
+      {selectedMember && (
+        <AllianceMemberHistory
+          member={selectedMember}
+          points={selectedHistory}
+          periodLabel={periodLabel}
+          periodChange={selectedGrowth?.change ?? null}
+          periodGained={selectedGrowth?.gained ?? null}
+        />
+      )}
+    </section>
+  );
+}
+
+function AllianceMemberHistory({
+  member,
+  points,
+  periodLabel,
+  periodChange,
+  periodGained,
+}: {
+  member: NonNullable<StateSnapshot["allianceMembers"]>[number];
+  points: { capturedAt: string; power: number; rank: number | null }[];
+  periodLabel: string;
+  periodChange: number | null;
+  periodGained: number | null;
+}) {
+  const values = points.map((point) => point.power);
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const range = Math.max(1, maximum - minimum);
+  const chartPoints = points
+    .map((point, index) => {
+      const x = points.length === 1 ? 320 : 16 + (index / (points.length - 1)) * 608;
+      const y = 134 - ((point.power - minimum) / range) * 112;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const first = points[0];
+  const last = points[points.length - 1];
+  return (
+    <section className="alliance-member-history">
+      <header>
+        <div>
+          <p className="eyebrow"><History /> Member power history</p>
+          <h3>{member.name}</h3>
+          <span>{points.length} saved updates · {periodLabel}</span>
+        </div>
+        <div className="alliance-history-metrics">
+          <span>Current<strong>{formatPower(last?.power ?? member.power)}</strong></span>
+          <span>Peak<strong>{formatPower(maximum || member.power)}</strong></span>
+          <span>Period gain<strong className={(periodGained ?? 0) >= 0 ? "positive" : "negative"}>{periodGained == null ? "—" : `${periodGained >= 0 ? "+" : ""}${formatPower(periodGained)}`}</strong></span>
+          <span>Period change<strong><PowerChange value={periodChange} /></strong></span>
+        </div>
+      </header>
+      <div className="alliance-history-chart">
+        {points.length > 1 ? (
+          <svg viewBox="0 0 640 150" role="img" aria-label={`${member.name} power history`}>
+            <line x1="16" y1="22" x2="624" y2="22" />
+            <line x1="16" y1="78" x2="624" y2="78" />
+            <line x1="16" y1="134" x2="624" y2="134" />
+            <polyline points={chartPoints} />
+            {points.map((point, index) => {
+              const [x, y] = chartPoints.split(" ")[index].split(",");
+              return <circle key={`${point.capturedAt}-${point.power}`} cx={x} cy={y} r="4"><title>{`${new Date(point.capturedAt).toLocaleString()} · ${formatPower(point.power)}${point.rank ? ` · State rank #${point.rank}` : ""}`}</title></circle>;
+            })}
+          </svg>
+        ) : <div className="alliance-history-waiting">A second update will start this graph.</div>}
+        {first && last && <div className="alliance-history-dates"><span>{new Date(first.capturedAt).toLocaleString()}</span><span>{new Date(last.capturedAt).toLocaleString()}</span></div>}
       </div>
     </section>
   );
