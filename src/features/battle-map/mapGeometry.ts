@@ -37,6 +37,14 @@ export function unproject(sx:number,sy:number,camera:Camera,width:number,height:
 }
 export function clampCoordinate(value:number){return Math.max(MAP_MIN,Math.min(MAP_MAX,Math.round(value)))}
 export const isPanChord=(buttons:number)=>(buttons&3)===3
+export function gridStepForZoom(zoom:number){
+  if(zoom>=.55)return 1
+  if(zoom>=.28)return 2
+  if(zoom>=.12)return 5
+  if(zoom>=.06)return 10
+  if(zoom>=.025)return 25
+  return 50
+}
 
 export function towerAtScreenPoint(towers:MapTower[],sx:number,sy:number,camera:Camera,width:number,height:number):MapTower|undefined{
   const halfWidth=Math.max(22,TILE_WIDTH*camera.zoom*1.5)

@@ -1,5 +1,5 @@
 import type { MapTower } from '../../types'
-import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, clampCoordinate, fixedBuildingFootprint, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
+import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, clampCoordinate, fixedBuildingFootprint, gridStepForZoom, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
 
 interface RenderOptions { selectedId?:string|null; pointer?:{x:number;y:number}|null; exportMode?:boolean }
 const polygon=(ctx:CanvasRenderingContext2D,points:{x:number;y:number}[])=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath()}
@@ -13,13 +13,11 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   const gradient=ctx.createLinearGradient(0,0,0,h);gradient.addColorStop(0,'#2a2524');gradient.addColorStop(1,'#17191d');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h)
   const corners=[unproject(0,0,camera,w,h),unproject(w,0,camera,w,h),unproject(w,h,camera,w,h),unproject(0,h,camera,w,h)]
   const minX=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.x))-3)),maxX=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.x))+3)),minY=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.y))-3)),maxY=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.y))+3))
-  if(camera.zoom>=.1){
-    const step=camera.zoom>=.28?1:camera.zoom>=.17?2:5
-    ctx.strokeStyle='rgba(170,185,204,.1)';ctx.lineWidth=camera.zoom>=.55?1.25:1
-    const startX=Math.floor(minX/step)*step,startY=Math.floor(minY/step)*step
-    for(let x=startX;x<=maxX;x+=step){const a=project({x:x-.5,y:minY-.5},camera,w,h),b=project({x:x-.5,y:maxY+.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
-    for(let y=startY;y<=maxY;y+=step){const a=project({x:minX-.5,y:y-.5},camera,w,h),b=project({x:maxX+.5,y:y-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
-  }
+  const step=gridStepForZoom(camera.zoom)
+  ctx.strokeStyle='rgba(170,185,204,.1)';ctx.lineWidth=camera.zoom>=.55?1.25:1
+  const startX=Math.floor(minX/step)*step,startY=Math.floor(minY/step)*step
+  for(let x=startX;x<=maxX;x+=step){const a=project({x:x-.5,y:minY-.5},camera,w,h),b=project({x:x-.5,y:maxY+.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
+  for(let y=startY;y<=maxY;y+=step){const a=project({x:minX-.5,y:y-.5},camera,w,h),b=project({x:maxX+.5,y:y-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
   area(ctx,camera,w,h,CAPITAL_BLOCKED.minX,CAPITAL_BLOCKED.maxX,CAPITAL_BLOCKED.minY,CAPITAL_BLOCKED.maxY,'rgba(187,63,63,.18)','rgba(255,100,100,.65)')
   for(const b of ARMORIES){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(74,112,146,.14)','rgba(103,167,221,.34)')}
   for(const b of TURRETS){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(182,118,54,.18)','rgba(246,171,88,.5)')}

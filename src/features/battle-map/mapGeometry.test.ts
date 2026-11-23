@@ -1,6 +1,6 @@
 import { describe,expect,it } from 'vitest'
 import type { MapTower } from '../../types'
-import { ARMORIES,CAPITAL,CAPITAL_BLOCKED,fixedBuildingFootprint,isPanChord,project,TILE_HEIGHT,TILE_WIDTH,towerAtScreenPoint,TURRETS,unproject,validateTowerPosition } from './mapGeometry'
+import { ARMORIES,CAPITAL,CAPITAL_BLOCKED,fixedBuildingFootprint,gridStepForZoom,isPanChord,project,TILE_HEIGHT,TILE_WIDTH,towerAtScreenPoint,TURRETS,unproject,validateTowerPosition } from './mapGeometry'
 
 describe('battle map geometry',()=>{
  it('uses compact 60 by 40 pixel tiles at maximum zoom',()=>{expect({width:TILE_WIDTH,height:TILE_HEIGHT}).toEqual({width:60,height:40})})
@@ -13,4 +13,5 @@ describe('battle map geometry',()=>{
  it('blocks overlapping 3x3 towers',()=>{const tower:MapTower={id:'a',name:'Alpha',x:520,y:520,color:'#60a5fa',createdAt:'x',updatedAt:'x'};expect(validateTowerPosition(522,520,[tower])).toContain('Alpha');expect(validateTowerPosition(524,520,[tower])).toBeNull()})
  it('keeps player towers easy to grab at distant zoom levels',()=>{const tower:MapTower={id:'a',name:'Alpha',x:520,y:520,color:'#60a5fa',createdAt:'x',updatedAt:'x'},camera={x:520,y:520,zoom:.05};expect(towerAtScreenPoint([tower],621,421,camera,1200,800)?.id).toBe('a');expect(towerAtScreenPoint([tower],623,423,camera,1200,800)).toBeUndefined()})
  it('only pans with primary and secondary mouse buttons together',()=>{expect(isPanChord(1)).toBe(false);expect(isPanChord(2)).toBe(false);expect(isPanChord(3)).toBe(true)})
+ it('keeps the coordinate grid readable at every zoom level',()=>{expect([.008,.025,.06,.12,.28,.55].map(gridStepForZoom)).toEqual([50,25,10,5,2,1])})
 })
