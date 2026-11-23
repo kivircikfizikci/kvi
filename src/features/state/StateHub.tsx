@@ -492,8 +492,8 @@ function PowerHistory({
         )}
         {first && last && (
           <div className="state-history-dates">
-            <span>{new Date(first.capturedAt).toLocaleDateString()}</span>
-            <span>{new Date(last.capturedAt).toLocaleDateString()}</span>
+            <span>{new Date(first.capturedAt).toLocaleString()}</span>
+            <span>{new Date(last.capturedAt).toLocaleString()}</span>
           </div>
         )}
       </div>

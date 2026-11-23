@@ -565,15 +565,6 @@ export default function App() {
                   <Cloud />
                   {sessionLabel}
                 </Badge>
-                {canEdit && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => selectOfficerPlayer("")}
-                    title="Change member"
-                  >
-                    <UserRoundCheck />
-                  </Button>
-                )}
                 <Button variant="ghost" onClick={logout}>
                   {signedIn ? (
                     <>
@@ -596,15 +587,6 @@ export default function App() {
                 <Cloud />
                 {sessionLabel}
               </Badge>
-              {canEdit && (
-                <Button
-                  variant="secondary"
-                  onClick={() => selectOfficerPlayer("")}
-                >
-                  <UserRoundCheck />
-                  Change member
-                </Button>
-              )}
               {canEdit && activeModule === "alliance" && (
                 <Button
                   variant="secondary"

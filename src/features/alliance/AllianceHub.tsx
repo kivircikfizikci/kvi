@@ -4,7 +4,6 @@ import {
   LoaderCircle,
   Pencil,
   Play,
-  Plus,
   RefreshCw,
   Search,
   Square,
@@ -31,7 +30,6 @@ import type {
   StateSnapshot,
 } from "../../types";
 import { formatPower } from "../../utils/format";
-import { MAX_PLAYERS } from "../players/constants";
 import {
   AllianceRankBadge,
   playerAllianceRank,
@@ -182,7 +180,7 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
   const periodLabel = weeklyBaseline
     ? "Last 7 days"
     : hasComparison
-      ? `Since ${new Date(baseline!.capturedAt).toLocaleDateString()}`
+      ? `Since ${new Date(baseline!.capturedAt).toLocaleString()}`
       : "Waiting for comparison";
   const GrowthList = ({
     title,
@@ -746,15 +744,6 @@ export function AllianceHub({
                 </span>
               </h3>
             </div>
-            {canEdit && (
-              <Button
-                disabled={players.length >= MAX_PLAYERS}
-                onClick={() => onEdit(null)}
-              >
-                <Plus />
-                Add player
-              </Button>
-            )}
           </header>
           <div className="alliance-player-tools">
             <div className="alliance-search">
