@@ -20,10 +20,8 @@ import {
   LogIn,
   LogOut,
   Plus,
-  Redo2,
   Shield,
   Trash2,
-  Undo2,
   UserRoundCheck,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -111,10 +109,6 @@ export default function App() {
   const deletePlan = usePlannerStore((s) => s.deletePlan);
   const renamePlan = usePlannerStore((s) => s.renamePlan);
   const savePlayer = usePlannerStore((s) => s.savePlayer);
-  const undo = usePlannerStore((s) => s.undo);
-  const redo = usePlannerStore((s) => s.redo);
-  const history = usePlannerStore((s) => s.history);
-  const future = usePlannerStore((s) => s.future);
   const assign = usePlannerStore((s) => s.assign);
   const remove = usePlannerStore((s) => s.removeAssignment);
   const reorder = usePlannerStore((s) => s.reorderRally);
@@ -512,81 +506,35 @@ export default function App() {
               );
             })}
           </nav>
-          {activeModule === "rally-planner" && (
-            <>
-              <WorldClocks />
-              <div className="top-actions">
-                {canEdit && (
-                  <>
-                    <Button
-                      variant="ghost"
-                      disabled={!history.length}
-                      onClick={undo}
-                    >
-                      <Undo2 /> Undo
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={!future.length}
-                      onClick={redo}
-                    >
-                      <Redo2 /> Redo
-                    </Button>
-                  </>
-                )}
-                <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
-                  <Cloud />
-                  {sessionLabel}
-                </Badge>
-                <Button variant="ghost" onClick={logout}>
-                  {signedIn ? (
-                    <>
-                      <LogOut />
-                      Logout
-                    </>
-                  ) : (
-                    <>
-                      <LogIn />
-                      Sign in
-                    </>
-                  )}
-                </Button>
-              </div>
-            </>
-          )}
-          {activeModule !== "rally-planner" && (
-            <>
-              <WorldClocks />
-              <div className="navbar-session">
-                <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
-                  <Cloud />
-                  {sessionLabel}
-                </Badge>
-                {canEdit && activeModule === "alliance" && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setGameDataOpen((value) => !value)}
-                  >
-                    <Database />
-                    Game data
-                  </Button>
-                )}
-                <Button variant="secondary" onClick={logout}>
-                  {signedIn ? (
-                    <>
-                      <LogOut />
-                      Logout
-                    </>
-                  ) : (
-                    <>
-                      <LogIn />
-                      Sign in
-                    </>
-                  )}
-                </Button>
-              </div>
-            </>
-          )}
+          <WorldClocks />
+          <div className="navbar-session">
+            <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
+              <Cloud />
+              {sessionLabel}
+            </Badge>
+            {canEdit && activeModule === "alliance" && (
+              <Button
+                variant="secondary"
+                onClick={() => setGameDataOpen((value) => !value)}
+              >
+                <Database />
+                Game data
+              </Button>
+            )}
+            <Button variant="secondary" onClick={logout}>
+              {signedIn ? (
+                <>
+                  <LogOut />
+                  Logout
+                </>
+              ) : (
+                <>
+                  <LogIn />
+                  Sign in
+                </>
+              )}
+            </Button>
+          </div>
         </header>
         {(error || cloud.error) && (
           <div className="toast" role="alert">
