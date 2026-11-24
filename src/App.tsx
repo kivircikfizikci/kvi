@@ -149,8 +149,11 @@ export default function App() {
   const cloudSavePending = useRef(false);
   const openModule = (id: PlannerModuleId) => {
     setActiveModule(id);
-    window.history.replaceState({}, "", moduleUrl(id));
+    window.history.replaceState({}, "", moduleUrl());
   };
+  useEffect(() => {
+    window.history.replaceState({}, "", moduleUrl());
+  }, []);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, {
@@ -476,7 +479,14 @@ export default function App() {
     >
       <div className={`app-shell ${canEdit ? "" : "app-read-only"}`}>
         <header className="topbar">
-          <div className="brand">
+          <button
+            className="brand brand-home"
+            type="button"
+            onClick={() =>
+              openModule(cloud.role === "viewer" ? "state" : "alliance")
+            }
+            aria-label="Go to KVI Planner home"
+          >
             <div className="brand-mark">
               <Shield />
             </div>
@@ -484,7 +494,7 @@ export default function App() {
               <p>KVI · DARK WAR: SURVIVAL</p>
               <h1>Planner</h1>
             </div>
-          </div>
+          </button>
           <nav className="app-nav">
             {PLANNER_MODULES.filter(
               (module) => cloud.role !== "viewer" || module.id === "state",
@@ -543,6 +553,7 @@ export default function App() {
                   </>
                 )}
               </div>
+              <WorldClocks />
               <div className="top-actions">
                 {canEdit && (
                   <>
@@ -583,37 +594,39 @@ export default function App() {
             </>
           )}
           {activeModule !== "rally-planner" && (
-            <div className="navbar-session">
-              <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
-                <Cloud />
-                {sessionLabel}
-              </Badge>
-              {canEdit && activeModule === "alliance" && (
-                <Button
-                  variant="secondary"
-                  onClick={() => setGameDataOpen((value) => !value)}
-                >
-                  <Database />
-                  Game data
-                </Button>
-              )}
-              <Button variant="secondary" onClick={logout}>
-                {signedIn ? (
-                  <>
-                    <LogOut />
-                    Logout
-                  </>
-                ) : (
-                  <>
-                    <LogIn />
-                    Sign in
-                  </>
+            <>
+              <WorldClocks />
+              <div className="navbar-session">
+                <Badge tone={canEdit ? "green" : signedIn ? "blue" : "muted"}>
+                  <Cloud />
+                  {sessionLabel}
+                </Badge>
+                {canEdit && activeModule === "alliance" && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setGameDataOpen((value) => !value)}
+                  >
+                    <Database />
+                    Game data
+                  </Button>
                 )}
-              </Button>
-            </div>
+                <Button variant="secondary" onClick={logout}>
+                  {signedIn ? (
+                    <>
+                      <LogOut />
+                      Logout
+                    </>
+                  ) : (
+                    <>
+                      <LogIn />
+                      Sign in
+                    </>
+                  )}
+                </Button>
+              </div>
+            </>
           )}
         </header>
-        <WorldClocks />
         {(error || cloud.error) && (
           <div className="toast" role="alert">
             <span>{error || cloud.error}</span>

@@ -1,47 +1,45 @@
-.world-clock-bar {
-  position: sticky;
-  top: 72px;
-  z-index: 19;
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 5px 20px;
-  border-bottom: 1px solid var(--line);
-  background: #0a0f16ed;
-  backdrop-filter: blur(10px);
+.brand-home {
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 
-.world-clock-heading,
+.brand-home:hover .brand-mark {
+  border-color: var(--orange2);
+  filter: brightness(1.12);
+}
+
+.brand-home:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 5px;
+  border-radius: 4px;
+}
+
+.world-clock-bar,
 .world-clock-list,
 .world-clock {
   display: flex;
   align-items: center;
 }
 
-.world-clock-heading {
-  gap: 7px;
-  color: #77859a;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 0.68rem;
-  font-weight: 800;
-}
-
-.world-clock-heading svg {
-  color: var(--orange2);
+.world-clock-bar {
+  flex: none;
+  margin-left: auto;
 }
 
 .world-clock-list {
-  gap: 6px;
+  gap: 4px;
 }
 
 .world-clock {
-  min-width: 165px;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 4px 9px;
+  min-width: 96px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 4px 7px;
   border: 1px solid #283342;
   border-radius: 6px;
   background: #111824;
@@ -54,95 +52,57 @@
 }
 
 .world-clock strong {
-  color: #cdd5e1;
-  font-size: 0.72rem;
+  color: #aeb9c9;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.6rem;
 }
 
-.world-clock span small {
-  margin-top: 1px;
-  color: #6f7d91;
-  font-size: 0.6rem;
+.world-clock span small,
+.world-clock time small {
+  display: none;
 }
 
 .world-clock time {
   color: #ffb47f;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
 }
 
-.world-clock time small {
-  display: inline;
-  margin-right: 5px;
-  color: #77859a;
-  font-size: 0.6rem;
-  font-weight: 700;
+.navbar-session {
+  margin-left: 0;
 }
 
-.workspace,
-.battle-shell {
-  height: calc(100vh - 116px);
-}
+@media (max-width: 1180px) and (min-width: 781px) {
+  .world-clock {
+    min-width: 82px;
+    padding-inline: 5px;
+  }
 
-.alliance-profile {
-  top: 128px;
-}
-
-@media (max-width: 900px) {
-  .battle-shell {
-    height: auto;
+  .world-clock time {
+    font-size: 0.68rem;
   }
 }
 
 @media (max-width: 780px) {
   .world-clock-bar {
-    position: static;
-    justify-content: flex-start;
-    gap: 8px;
-    min-height: 42px;
-    padding: 5px 8px;
-    overflow-x: auto;
-  }
-
-  .world-clock-heading span {
-    display: none;
+    order: 4;
+    width: 100%;
+    margin-left: 0;
   }
 
   .world-clock-list {
-    flex: 1;
+    width: 100%;
   }
 
   .world-clock {
     min-width: 0;
     flex: 1;
-    gap: 6px;
   }
 
-  .world-clock span small,
-  .world-clock time small {
-    display: none;
-  }
-
-  .workspace {
-    height: auto;
-  }
-}
-
-@media (max-width: 430px) {
-  .world-clock-heading {
-    display: none;
-  }
-
-  .world-clock {
-    padding-inline: 6px;
-  }
-
-  .world-clock strong {
-    font-size: 0.62rem;
-  }
-
-  .world-clock time {
-    font-size: 0.68rem;
+  .navbar-session {
+    order: 5;
   }
 }

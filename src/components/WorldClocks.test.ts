@@ -11,8 +11,8 @@ describe("world clocks", () => {
     expect(formatWorldClock(instant, "Europe/Berlin").time).toBe(
       "14:00:00",
     );
-    expect(formatWorldClock(instant, "Asia/Singapore").time).toBe(
-      "20:00:00",
+    expect(formatWorldClock(instant, "Asia/Seoul").time).toBe(
+      "21:00:00",
     );
   });
 });

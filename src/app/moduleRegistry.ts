@@ -17,4 +17,4 @@ export function initialModule(search:string):PlannerModuleId{
   return params.get('view')==='map'?'battle-map':'alliance'
 }
 
-export function moduleUrl(id:PlannerModuleId){const url=new URL(window.location.href);url.searchParams.delete('view');url.searchParams.set('module',id);return`${url.pathname}${url.search}${url.hash}`}
+export function moduleUrl(href=window.location.href){const url=new URL(href);url.searchParams.delete('view');url.searchParams.delete('module');return`${url.pathname}${url.search}${url.hash}`}

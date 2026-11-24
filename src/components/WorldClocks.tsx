@@ -1,10 +1,9 @@
-import { Globe2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export const WORLD_CLOCKS = [
   { label: "America", city: "New York", timeZone: "America/New_York" },
-  { label: "Germany", city: "Berlin", timeZone: "Europe/Berlin" },
-  { label: "Asia", city: "Singapore", timeZone: "Asia/Singapore" },
+  { label: "Europe", city: "Berlin", timeZone: "Europe/Berlin" },
+  { label: "Asia", city: "Seoul", timeZone: "Asia/Seoul" },
 ] as const;
 
 export function formatWorldClock(date: Date, timeZone: string) {
@@ -35,10 +34,6 @@ export function WorldClocks() {
 
   return (
     <section className="world-clock-bar" aria-label="Regional current times">
-      <div className="world-clock-heading" aria-hidden="true">
-        <Globe2 />
-        <span>World time</span>
-      </div>
       <div className="world-clock-list">
         {WORLD_CLOCKS.map((clock) => {
           const current = formatWorldClock(now, clock.timeZone);
