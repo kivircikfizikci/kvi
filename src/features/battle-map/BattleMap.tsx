@@ -1,87 +1,193 @@
-import { Crosshair, Download, LocateFixed, MapPinned, MousePointer2, Pencil, Plus, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
-import { Badge, Button, Input, Modal } from '../../components/ui'
+import { Crosshair, Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { Button } from '../../components/ui'
 import { db } from '../../db'
-import { PlayerSelect } from '../players/PlayerSelect'
-import { usePlannerStore } from '../../store/usePlannerStore'
 import type { MapTower } from '../../types'
-import { formatPower, now, uid } from '../../utils/format'
-import { clampCoordinate, exportCamera, isPanChord, type Camera, TILE_HEIGHT, TILE_WIDTH, towerAtScreenPoint, unproject, validateTowerPosition } from './mapGeometry'
+import { exportCamera, TILE_HEIGHT, TILE_WIDTH, unproject, type Camera } from './mapGeometry'
 import { renderBattleMap } from './mapRenderer'
 import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import './battle-map.css'
 
-type Mode = 'view' | 'edit' | 'add'
-const colors = ['#38bdf8', '#a78bfa', '#34d399', '#fb7185', '#fbbf24', '#60a5fa', '#f97316', '#22d3ee']
+const defaultCamera: Camera = { x: 501.5, y: 499.5, zoom: .075 }
+const clampCenter = (value: number) => Math.max(0, Math.min(999, value))
+const clampZoom = (value: number) => Math.max(.008, Math.min(1, value))
 
-function CapitalClashMap({canEdit=true}:{canEdit?:boolean}) {
+function GameMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{ type: 'pending' | 'pan' | 'tower'; sx: number; sy: number; camera: Camera; moved: boolean; towerId?: string; offsetX?: number; offsetY?: number } | null>(null)
-  const longPressRef = useRef<number | null>(null)
+  const drag = useRef<{ x: number; y: number; camera: Camera } | null>(null)
   const [size, setSize] = useState({ width: 1000, height: 700 })
-  const [camera, setCamera] = useState<Camera>({ x: 501.5, y: 499.5, zoom: .075 })
+  const [camera, setCamera] = useState(defaultCamera)
   const [towers, setTowers] = useState<MapTower[]>([])
+  const [selectedId, setSelectedId] = useState<string>()
   const [loaded, setLoaded] = useState(false)
-  const [mode, setMode] = useState<Mode>('view')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [draft, setDraft] = useState({ playerId: '', name: '', x: '520', y: '520' })
-  const [selectedDraft, setSelectedDraft] = useState({ playerId: '', name: '', x: '', y: '' })
-  const [quickPlaceOpen, setQuickPlaceOpen] = useState(false)
-  const [quickPlaceError, setQuickPlaceError] = useState<string | null>(null)
-  const players = usePlannerStore(state => state.players)
-  const playerById = useMemo(() => new Map(players.map(player => [player.id, player])), [players])
-  const selected = useMemo(() => towers.find(t => t.id === selectedId) ?? null, [towers, selectedId])
-  const displayTowers = useMemo(() => towers.map(tower => { const player = tower.playerId ? playerById.get(tower.playerId) : null; return player ? { ...tower, name: player.name } : tower }), [towers, playerById])
-  const placedPlayerIds = useMemo(() => new Set(towers.flatMap(tower => tower.playerId ? [tower.playerId] : [])), [towers])
+  const [failed, setFailed] = useState(false)
 
-  useEffect(() => { void db.mapTowers.toArray().then(rows => { setTowers(rows); setLoaded(true) }).catch(() => { setMessage('Map placements could not be loaded.'); setLoaded(true) }) }, [])
-  useEffect(() => { if (!loaded||!canEdit) return; const timer = window.setTimeout(() => void db.transaction('rw', db.mapTowers, async () => { await db.mapTowers.clear(); await db.mapTowers.bulkPut(towers) }).then(()=>window.dispatchEvent(new Event('planner-local-change'))), 180); return () => clearTimeout(timer) }, [towers, loaded, canEdit])
-  useEffect(() => { if (selected) { const player = selected.playerId ? playerById.get(selected.playerId) : null; setSelectedDraft({ playerId: selected.playerId ?? '', name: player?.name ?? selected.name, x: String(selected.x), y: String(selected.y) }) } }, [selected, playerById])
-  useEffect(() => { const node = wrapRef.current; if (!node) return; const observer = new ResizeObserver(entries => { const rect = entries[0].contentRect; setSize({ width: Math.max(320, Math.floor(rect.width)), height: Math.max(420, Math.floor(rect.height)) }) }); observer.observe(node); return () => observer.disconnect() }, [])
-  useEffect(() => { const canvas = canvasRef.current; if (!canvas) return; const dpr = Math.min(2, window.devicePixelRatio || 1); canvas.width = Math.round(size.width * dpr); canvas.height = Math.round(size.height * dpr); canvas.style.width = `${size.width}px`; canvas.style.height = `${size.height}px`; const ctx = canvas.getContext('2d'); if (!ctx) return; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); renderBattleMap(ctx, size.width, size.height, camera, displayTowers, { selectedId, pointer }) }, [size, camera, displayTowers, selectedId, pointer])
-  useEffect(() => () => { if (longPressRef.current !== null) window.clearTimeout(longPressRef.current) }, [])
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      const [profile, roster] = await Promise.all([
+        db.allianceProfiles.get('primary'),
+        db.stateSnapshots.orderBy('capturedAt').reverse()
+          .filter(snapshot => Boolean(snapshot.allianceMembers?.length)).first(),
+      ])
+      const positions = new Map(profile?.gameObservations?.positions.map(row => [row.uid, row]))
+      if (!active) return
+      setTowers((roster?.allianceMembers ?? []).flatMap(member => {
+        const position = positions.get(member.uid)
+        if (!position) return []
+        return [{
+          id: member.uid,
+          name: member.name,
+          x: position.x,
+          y: position.y,
+          color: '#38bdf8',
+          createdAt: position.capturedAt,
+          updatedAt: position.capturedAt,
+        }]
+      }))
+      setFailed(false)
+      setLoaded(true)
+    }
+    const refresh = () => void load().catch(() => {
+      if (active) setFailed(true)
+    })
+    refresh()
+    window.addEventListener('planner-local-change', refresh)
+    return () => {
+      active = false
+      window.removeEventListener('planner-local-change', refresh)
+    }
+  }, [])
 
-  const canvasPoint = (event: { clientX: number; clientY: number }) => { const rect = canvasRef.current!.getBoundingClientRect(); return { x: event.clientX - rect.left, y: event.clientY - rect.top } }
-  const mapPoint = (event: { clientX: number; clientY: number }) => { const point = canvasPoint(event), world = unproject(point.x, point.y, camera, size.width, size.height); return { x: clampCoordinate(world.x), y: clampCoordinate(world.y) } }
-  const clearLongPress = () => { if (longPressRef.current !== null) { window.clearTimeout(longPressRef.current); longPressRef.current = null } }
-  const addTower = useCallback((x: number, y: number, name?: string, playerId?: string) => { if(playerId&&towers.some(tower=>tower.playerId===playerId)){setMessage('This alliance member already has a tower on the map.');return false}const error = validateTowerPosition(x, y, towers); if (error) { setMessage(error); return false } const player = playerId ? playerById.get(playerId) : null, stamp = now(), tower: MapTower = { id: uid(), playerId: player?.id, name: player?.name ?? (name?.trim() || `Tower ${towers.length + 1}`), x, y, color: colors[towers.length % colors.length], createdAt: stamp, updatedAt: stamp }; setTowers(value => [...value, tower]); setSelectedId(tower.id);setDraft(current=>({...current,playerId:'',name:''})); setMode('edit'); setMessage(null); return true }, [towers, playerById])
-  const removeTower = (id: string) => { setTowers(items => items.filter(tower => tower.id !== id)); if (selectedId === id) setSelectedId(null) }
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => { event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId); const screen = canvasPoint(event), rawWorld = unproject(screen.x, screen.y, camera, size.width, size.height), world = { x: clampCoordinate(rawWorld.x), y: clampCoordinate(rawWorld.y) }, hit = towerAtScreenPoint(towers, screen.x, screen.y, camera, size.width, size.height);clearLongPress();if(isPanChord(event.buttons)){dragRef.current={type:'pan',sx:screen.x,sy:screen.y,camera,moved:false};return}if(event.button!==0){dragRef.current=null;return}if(canEdit&&mode === 'edit' && hit) { setSelectedId(hit.id); dragRef.current = { type: 'tower', sx: screen.x, sy: screen.y, camera, moved: false, towerId: hit.id, offsetX: hit.x - rawWorld.x, offsetY: hit.y - rawWorld.y }; return }if(!canEdit){dragRef.current=null;return}dragRef.current = { type: 'pending', sx: screen.x, sy: screen.y, camera, moved: false }; longPressRef.current = window.setTimeout(() => { const drag = dragRef.current; if (!drag || drag.moved || drag.type !== 'pending') return; setDraft({ playerId: '', name: '', x: String(world.x), y: String(world.y) }); setQuickPlaceError(null); setQuickPlaceOpen(true); dragRef.current = null; longPressRef.current = null }, 550) }
-  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => { const screen = canvasPoint(event), world = unproject(screen.x, screen.y, camera, size.width, size.height); setPointer(world);let drag=dragRef.current;if(isPanChord(event.buttons)){clearLongPress();if(!drag||drag.type!=='pan'){dragRef.current={type:'pan',sx:screen.x,sy:screen.y,camera,moved:false};return}const dx=screen.x-drag.sx,dy=screen.y-drag.sy;drag.moved=true;setCamera({...drag.camera,x:Math.max(0,Math.min(999,drag.camera.x-dx/(TILE_WIDTH*drag.camera.zoom))),y:Math.max(0,Math.min(999,drag.camera.y+dy/(TILE_HEIGHT*drag.camera.zoom)))});return}if(!drag||drag.type==='pan')return;const dx = screen.x - drag.sx, dy = screen.y - drag.sy; if (Math.hypot(dx, dy) > 4) { drag.moved = true; clearLongPress() } if (drag.type==='tower'&&drag.towerId&&(event.buttons&1)===1) { const point = { x: clampCoordinate(world.x + (drag.offsetX ?? 0)), y: clampCoordinate(world.y + (drag.offsetY ?? 0)) }, error = validateTowerPosition(point.x, point.y, towers, drag.towerId); if (!error) setTowers(items => items.map(tower => tower.id === drag.towerId ? { ...tower, x: point.x, y: point.y, updatedAt: now() } : tower)) } }
-  const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => { clearLongPress(); const drag = dragRef.current; dragRef.current = null; if (mode === 'add' && drag?.type === 'pending' && !drag.moved) { const point = mapPoint(event); addTower(point.x, point.y) } }
-  const cancelPointer = () => { clearLongPress(); dragRef.current = null }
-  const onWheel = (event: WheelEvent<HTMLCanvasElement>) => { event.preventDefault(); const point = canvasPoint(event), world = unproject(point.x, point.y, camera, size.width, size.height), zoom = Math.max(.008, Math.min(1, camera.zoom * (event.deltaY > 0 ? .82 : 1.22))); setCamera({ x: Math.max(0, Math.min(999, world.x - (point.x - size.width / 2) / (TILE_WIDTH * zoom))), y: Math.max(0, Math.min(999, world.y + (point.y - size.height / 2) / (TILE_HEIGHT * zoom))), zoom }) }
-  const applySelected = () => { if (!selected) return; const x = clampCoordinate(Number(selectedDraft.x)), y = clampCoordinate(Number(selectedDraft.y)), error = validateTowerPosition(x, y, towers, selected.id), player = selectedDraft.playerId ? playerById.get(selectedDraft.playerId) : null;if(player&&towers.some(tower=>tower.id!==selected.id&&tower.playerId===player.id)){setMessage('This alliance member already has a tower on the map.');return} if (error) { setMessage(error); return } if (!player && !selectedDraft.name.trim()) { setMessage('Tower name is required.'); return } setTowers(items => items.map(tower => tower.id === selected.id ? { ...tower, playerId: player?.id, name: player?.name ?? selectedDraft.name.trim(), x, y, updatedAt: now() } : tower)); setMessage(null) }
-  const placeQuickTower = () => { const x = clampCoordinate(Number(draft.x)), y = clampCoordinate(Number(draft.y)), error = validateTowerPosition(x, y, towers); if (error) { setQuickPlaceError(error); return } if (addTower(x, y, draft.name, draft.playerId)) setQuickPlaceOpen(false) }
-  const focusTower = (tower: MapTower) => { setSelectedId(tower.id); setCamera(value => ({ ...value, x: tower.x, y: tower.y, zoom: Math.max(value.zoom, .22) })) }
-  const exportPng = () => { const canvas = document.createElement('canvas'); canvas.width = 1800; canvas.height = 1200; const ctx = canvas.getContext('2d'); if (!ctx) return; const exportView = exportCamera(displayTowers, canvas.width, canvas.height); renderBattleMap(ctx, canvas.width, canvas.height, exportView, displayTowers, { exportMode: true }); ctx.fillStyle = 'rgba(7,10,15,.92)'; ctx.fillRect(0, 0, canvas.width, 68); ctx.fillStyle = '#f5a55a'; ctx.font = '700 15px Inter, system-ui'; ctx.fillText('KVI · DARK WAR: SURVIVAL · CAPITAL CLASH', 28, 26); ctx.fillStyle = '#f4f7fb'; ctx.font = '700 24px Inter, system-ui'; ctx.fillText('Battle Map Plan', 28, 54); ctx.textAlign = 'right'; ctx.fillStyle = '#9daabc'; ctx.font = '13px Inter, system-ui'; ctx.fillText(`${towers.length} player towers · ${new Date().toLocaleString()}`, canvas.width - 28, 42); canvas.toBlob(blob => { if (!blob) return; const url = URL.createObjectURL(blob), anchor = document.createElement('a'); anchor.href = url; anchor.download = 'kvi-capital-clash-battle-map.png'; anchor.click(); URL.revokeObjectURL(url) }, 'image/png') }
+  useEffect(() => {
+    const node = wrapRef.current
+    if (!node) return
+    const observer = new ResizeObserver(([entry]) => {
+      setSize({
+        width: Math.max(1, Math.floor(entry.contentRect.width)),
+        height: Math.max(1, Math.floor(entry.contentRect.height)),
+      })
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
 
-  return <>
-    <main className="battle-shell">
-      <aside className="map-sidebar">
-        <header><p className="eyebrow">Capital Clash</p><h2>Battle Map</h2></header>
-        <div className={`mode-switch ${canEdit?'':'read-only'}`}><button className={mode === 'view' ? 'active' : ''} onClick={() => setMode('view')}><MousePointer2 />View</button>{canEdit&&<><button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}><Pencil />Edit</button><button className={mode === 'add' ? 'active' : ''} onClick={() => setMode('add')}><Plus />Place</button></>}</div>
-        {message && <div className="map-message">{message}<button onClick={() => setMessage(null)}>×</button></div>}
-        {canEdit&&<section className="map-form"><h3>Place a tower <Badge tone="blue">3×3</Badge></h3><PlayerSelect value={draft.playerId} excludeIds={placedPlayerIds} onChange={playerId => { const player = playerById.get(playerId); setDraft({ ...draft, playerId, name: player?.name ?? draft.name }) }} /><label>Name<Input disabled={Boolean(draft.playerId)} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder={`Tower ${towers.length + 1}`} /></label><div><label>X<Input type="number" min="1" max="998" value={draft.x} onChange={event => setDraft({ ...draft, x: event.target.value })} /></label><label>Y<Input type="number" min="1" max="998" value={draft.y} onChange={event => setDraft({ ...draft, y: event.target.value })} /></label></div><Button onClick={() => addTower(clampCoordinate(Number(draft.x)), clampCoordinate(Number(draft.y)), draft.name, draft.playerId)}><MapPinned />Place tower</Button><p>Only unplaced alliance members are listed. Click in Place mode, or press and hold any empty coordinate.</p></section>}
-        {canEdit&&selected && <section className="map-form selected-editor"><h3>Edit selected tower</h3><PlayerSelect value={selectedDraft.playerId} excludeIds={placedPlayerIds} onChange={playerId => { const player = playerById.get(playerId); setSelectedDraft({ ...selectedDraft, playerId, name: player?.name ?? selectedDraft.name }) }} /><label>Name<Input disabled={Boolean(selectedDraft.playerId)} value={selectedDraft.name} onChange={event => setSelectedDraft({ ...selectedDraft, name: event.target.value })} /></label><div><label>X<Input type="number" min="1" max="998" value={selectedDraft.x} onChange={event => setSelectedDraft({ ...selectedDraft, x: event.target.value })} /></label><label>Y<Input type="number" min="1" max="998" value={selectedDraft.y} onChange={event => setSelectedDraft({ ...selectedDraft, y: event.target.value })} /></label></div><div className="map-form-actions"><Button onClick={applySelected}>Apply</Button><Button variant="danger" onClick={() => removeTower(selected.id)}><Trash2 />Remove</Button></div></section>}
-        <section className="tower-list"><h3>Placed towers <span>{towers.length}</span></h3>{towers.length ? towers.map(tower => { const player = tower.playerId ? playerById.get(tower.playerId) : null; return <div key={tower.id} className={`tower-row ${tower.id === selectedId ? 'active' : ''}`}><button className="tower-focus" onClick={() => focusTower(tower)}><i style={{ background: tower.color }} /><span><strong>{player?.name ?? tower.name}</strong><small>X:{tower.x} · Y:{tower.y}{player ? ` · ${formatPower(player.totalPower)}` : ''}</small></span><LocateFixed /></button>{canEdit&&<button className="tower-delete" aria-label={`Remove ${player?.name ?? tower.name}`} title="Remove tower" onClick={() => removeTower(tower.id)}><Trash2 /></button>}</div> }) : <div className="map-empty">No player towers placed yet.</div>}</section>
-      </aside>
-      <section className="map-stage"><div className="map-toolbar"><div><Button variant="secondary" onClick={() => setCamera(value => ({ ...value, zoom: Math.min(1, value.zoom * 1.25) }))}><ZoomIn /></Button><Button variant="secondary" onClick={() => setCamera(value => ({ ...value, zoom: Math.max(.008, value.zoom / 1.25) }))}><ZoomOut /></Button><Button variant="secondary" onClick={() => setCamera({ x: 501.5, y: 499.5, zoom: .075 })}><Crosshair />Capital</Button></div><span>{Math.round(camera.zoom * 100)}% · Pan: Left + Right drag</span><Button onClick={exportPng}><Download />Export PNG</Button></div><div ref={wrapRef} className={`map-canvas-wrap mode-${mode}`}><canvas ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={cancelPointer} onPointerLeave={() => { setPointer(null); clearLongPress() }} onContextMenu={event => event.preventDefault()} onWheel={onWheel} /><div className="map-legend"><span><i className="legend-blocked" />No teleport</span><span><i className="legend-fixed" />Fixed objective</span><span><i className="legend-tower" />Player tower 3×3</span></div></div></section>
-    </main>
-    <Modal open={quickPlaceOpen} onOpenChange={open => { setQuickPlaceOpen(open); if (!open) setQuickPlaceError(null) }} title="Place tower"><div className="quick-place-form"><p>Select an unplaced player from the shared alliance roster. The held coordinate is the center tile.</p>{quickPlaceError && <div className="map-message">{quickPlaceError}</div>}<PlayerSelect value={draft.playerId} excludeIds={placedPlayerIds} onChange={playerId => { const player = playerById.get(playerId); setDraft({ ...draft, playerId, name: player?.name ?? draft.name }) }} /><label>Name<Input autoFocus={!draft.playerId} disabled={Boolean(draft.playerId)} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} placeholder={`Tower ${towers.length + 1}`} /></label><div className="quick-place-coordinates"><label>X<Input type="number" min="1" max="998" value={draft.x} onChange={event => setDraft({ ...draft, x: event.target.value })} /></label><label>Y<Input type="number" min="1" max="998" value={draft.y} onChange={event => setDraft({ ...draft, y: event.target.value })} /></label></div><div className="quick-place-actions"><Button variant="secondary" onClick={() => setQuickPlaceOpen(false)}>Cancel</Button><Button onClick={placeQuickTower}><MapPinned />Place tower</Button></div></div></Modal>
-  </>
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    canvas.width = Math.round(size.width * dpr)
+    canvas.height = Math.round(size.height * dpr)
+    canvas.style.width = `${size.width}px`
+    canvas.style.height = `${size.height}px`
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    renderBattleMap(ctx, size.width, size.height, camera, towers, { selectedId })
+  }, [size, camera, towers, selectedId])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const rect = canvas.getBoundingClientRect()
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      setCamera(current => {
+        const world = unproject(x, y, current, size.width, size.height)
+        const zoom = clampZoom(current.zoom * (event.deltaY > 0 ? .82 : 1.22))
+        return {
+          x: clampCenter(world.x - (x - size.width / 2) / (TILE_WIDTH * zoom)),
+          y: clampCenter(world.y + (y - size.height / 2) / (TILE_HEIGHT * zoom)),
+          zoom,
+        }
+      })
+    }
+    canvas.addEventListener('wheel', wheel, { passive: false })
+    return () => canvas.removeEventListener('wheel', wheel)
+  }, [size])
+
+  function pan(event: PointerEvent<HTMLCanvasElement>) {
+    const start = drag.current
+    if (!start) return
+    setCamera({
+      x: clampCenter(start.camera.x - (event.clientX - start.x) / (TILE_WIDTH * start.camera.zoom)),
+      y: clampCenter(start.camera.y + (event.clientY - start.y) / (TILE_HEIGHT * start.camera.zoom)),
+      zoom: start.camera.zoom,
+    })
+  }
+
+  function exportPng() {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1800
+    canvas.height = 1200
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const view = exportCamera(towers, canvas.width, canvas.height)
+    renderBattleMap(ctx, canvas.width, canvas.height, view, towers, { exportMode: true })
+    canvas.toBlob(blob => {
+      if (!blob) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'kvi-game-map.png'
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    }, 'image/png')
+  }
+
+  return <main className="battle-shell">
+    <aside className="map-sidebar">
+      <header><h2>Game Map</h2><span>Last captured alliance positions</span></header>
+      <section className="tower-list">
+        <h3>Alliance members <span>{towers.length}</span></h3>
+        {towers.map(tower => <button key={tower.id} type="button"
+          className={selectedId === tower.id ? 'active' : ''}
+          onClick={() => {
+            setSelectedId(tower.id)
+            setCamera(current => ({ x: tower.x, y: tower.y, zoom: Math.max(current.zoom, .22) }))
+          }}>
+          <i style={{ background: tower.color }} />
+          <span><strong>{tower.name}</strong><small>X:{tower.x} · Y:{tower.y} · {new Date(tower.updatedAt).toLocaleString()}</small></span>
+          <LocateFixed />
+        </button>)}
+        {failed ? <div className="map-empty">Game positions could not be loaded.</div>
+          : loaded && !towers.length && <div className="map-empty">Import an Alliance capture with map coordinates to place members.</div>}
+      </section>
+    </aside>
+    <section className="map-stage">
+      <div className="map-toolbar">
+        <div>
+          <Button variant="secondary" aria-label="Zoom in" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom * 1.25) }))}><ZoomIn /></Button>
+          <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
+          <Button variant="secondary" aria-label="Fit alliance positions" onClick={() => setCamera(towers.length ? exportCamera(towers, size.width, size.height) : defaultCamera)}><Crosshair />Fit map</Button>
+        </div>
+        <span>{Math.round(camera.zoom * 100)}% · Drag to pan</span>
+        <Button onClick={exportPng}><Download />Export PNG</Button>
+      </div>
+      <div ref={wrapRef} className="map-canvas-wrap">
+        <canvas ref={canvasRef} aria-label="Game map" className="cursor-grab active:cursor-grabbing"
+          onPointerDown={event => {
+            if (event.button !== 0) return
+            event.currentTarget.setPointerCapture(event.pointerId)
+            drag.current = { x: event.clientX, y: event.clientY, camera }
+          }}
+          onPointerMove={pan}
+          onLostPointerCapture={() => { drag.current = null }}
+        />
+      </div>
+    </section>
+  </main>
 }
 
-export function BattleMap({canEdit=true}:{canEdit?:boolean}) {
-  const [battlefield, setBattlefield] = useState<'capital'|'black-gold'>('capital')
+export function BattleMap({ canEdit = true }: { canEdit?: boolean }) {
+  const [battlefield, setBattlefield] = useState<'game' | 'black-gold'>('game')
   return <div className="battle-map-page">
     <nav className="battlefield-switch" aria-label="Battlefield type">
-      <button className={battlefield==='capital'?'active':''} onClick={()=>setBattlefield('capital')}>Capital Clash</button>
-      <button className={battlefield==='black-gold'?'active':''} onClick={()=>setBattlefield('black-gold')}>Black Gold Battlefield</button>
+      <button className={battlefield === 'game' ? 'active' : ''} onClick={() => setBattlefield('game')}>Game Map</button>
+      <button className={battlefield === 'black-gold' ? 'active' : ''} onClick={() => setBattlefield('black-gold')}>Black Gold Battlefield</button>
     </nav>
-    {battlefield==='capital'?<CapitalClashMap canEdit={canEdit}/>:<BlackGoldBattlefield canEdit={canEdit}/>}
+    {battlefield === 'game' ? <GameMap /> : <BlackGoldBattlefield canEdit={canEdit} />}
   </div>
 }

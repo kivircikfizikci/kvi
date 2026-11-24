@@ -683,7 +683,7 @@ export default function App() {
         ) : activeModule === "battle-map" ? (
           <BattleMap canEdit={canEdit} />
         ) : activeModule === "state" ? (
-          <StateHub />
+          <StateHub showProfileUpdates={signedIn} />
         ) : activeModule === "officer-notes" ? (
           <OfficerNotes
             canEdit={canEdit}

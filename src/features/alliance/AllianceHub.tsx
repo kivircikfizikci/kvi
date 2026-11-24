@@ -453,6 +453,9 @@ export function AllianceHub({
     StateSnapshot[]
   >([]);
   const [pendingHasRosterUpdate, setPendingHasRosterUpdate] = useState(false);
+  const [pendingObservations, setPendingObservations] = useState<Pick<
+    DarkWarRosterResult, "capturedAt" | "playerPositions" | "playerProfileUpdates"
+  > | null>(null);
   const [syncMatches, setSyncMatches] = useState<
     Record<string, GameRosterMatch>
   >({});
@@ -522,6 +525,7 @@ export function AllianceHub({
     }
   };
   const reviewRoster = (result: DarkWarRosterResult) => {
+    setPendingObservations(result);
     const entries = result.players;
     const own = entries.filter(isProfileAlliance);
     const currentMembers = own
@@ -702,7 +706,7 @@ export function AllianceHub({
       event.target.value = "";
     }
   };
-  const applyGameSync = () => {
+  const applyGameSync = async () => {
     const selected = pendingRoster.filter(
       (entry) =>
         isProfileAlliance(entry) ||
@@ -732,12 +736,37 @@ export function AllianceHub({
       ...pendingStatePatches,
       ...(pendingStateSnapshot ? [pendingStateSnapshot] : []),
     ];
-    if (snapshotsToSave.length)
-      void db
-        .transaction("rw", db.stateSnapshots, async () => {
+    try {
+      await db.transaction("rw", db.stateSnapshots, db.allianceProfiles, async () => {
+        if (snapshotsToSave.length)
           await db.stateSnapshots.bulkPut(snapshotsToSave);
-        })
-        .then(() => window.dispatchEvent(new Event("planner-local-change")));
+        if (!pendingObservations ||
+          (!pendingObservations.playerPositions.length && !pendingObservations.playerProfileUpdates.length)) return;
+        const saved = (await db.allianceProfiles.get("primary")) ?? profile;
+        const positions = new Map(saved.gameObservations?.positions.map((row) => [row.uid, row]));
+        const profileUpdates = new Map(saved.gameObservations?.profileUpdates.map((row) => [row.uid, row]));
+        for (const row of pendingObservations.playerPositions) {
+          const current = positions.get(row.uid);
+          if (!current || Date.parse(pendingObservations.capturedAt) >= Date.parse(current.capturedAt))
+            positions.set(row.uid, { ...row, capturedAt: pendingObservations.capturedAt });
+        }
+        for (const row of pendingObservations.playerProfileUpdates) {
+          if (row.lastUpdateTime > (profileUpdates.get(row.uid)?.lastUpdateTime ?? 0))
+            profileUpdates.set(row.uid, row);
+        }
+        await db.allianceProfiles.put({
+          ...saved,
+          gameObservations: {
+            positions: [...positions.values()],
+            profileUpdates: [...profileUpdates.values()],
+          },
+        });
+      });
+      window.dispatchEvent(new Event("planner-local-change"));
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : "Game data could not be saved.");
+      return;
+    }
     setSyncReviewOpen(false);
     setSyncMessage(
       `Sync complete · ${summary.added} added · ${summary.updated} members updated${summary.aliased ? ` · ${summary.aliased} renamed` : ""}${snapshotsToSave.length ? ` · ${snapshotsToSave.length} data update${snapshotsToSave.length === 1 ? "" : "s"} saved` : ""}.`,
@@ -1284,7 +1313,7 @@ export function AllianceHub({
             >
               Cancel
             </Button>
-            <Button onClick={applyGameSync}>Apply game update</Button>
+            <Button onClick={() => void applyGameSync()}>Apply game update</Button>
           </div>
         </div>
       </Modal>

@@ -106,6 +106,20 @@ export interface AllianceProfile {
   tag: string;
   state: string;
   updatedAt: string;
+  gameObservations?: GameObservations;
+}
+export interface GamePosition {
+  uid: string;
+  x: number;
+  y: number;
+}
+export interface GameProfileUpdate {
+  uid: string;
+  lastUpdateTime: number;
+}
+export interface GameObservations {
+  positions: (GamePosition & { capturedAt: string })[];
+  profileUpdates: GameProfileUpdate[];
 }
 export type OfficerNoteStatus = "requested" | "planned" | "done";
 export interface OfficerNote {

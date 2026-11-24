@@ -37,6 +37,22 @@ describe("Dark War roster name matching", () => {
 });
 
 describe("saved Dark War roster", () => {
+  it("accepts private observations without a ranking and checks map boundaries", () => {
+    const result = parseSavedDarkWarRoster(JSON.stringify({
+      playerPositions: [
+        { uid: "1", x: 0, y: 999 },
+        { uid: "2", x: null, y: 1 },
+        { uid: "3", x: 1000, y: 1 },
+      ],
+      playerProfileUpdates: [
+        { uid: "1", lastUpdateTime: "1795545910" },
+        { uid: "2", lastUpdateTime: 0 },
+      ],
+    }));
+    expect(result.playerPositions).toEqual([{ uid: "1", x: 0, y: 999 }]);
+    expect(result.playerProfileUpdates).toEqual([{ uid: "1", lastUpdateTime: 1795545910 }]);
+    expect(result.stateSnapshot).toBeUndefined();
+  });
   it("loads the local helper JSON without private fields", () => {
     const result = parseSavedDarkWarRoster(
       JSON.stringify({

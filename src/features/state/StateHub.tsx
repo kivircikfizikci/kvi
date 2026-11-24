@@ -95,7 +95,7 @@ function SortButton({
   );
 }
 
-export function StateHub() {
+export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: boolean }) {
   const alliancePlayers = usePlannerStore((state) => state.players);
   const showHistory = usePlannerStore((state) => state.cloudCanEdit);
   const [snapshots, setSnapshots] = useState<StateSnapshot[]>([]),
@@ -104,6 +104,24 @@ export function StateHub() {
     [sort, setSort] = useState<SortKey>("rank"),
     [direction, setDirection] = useState<"asc" | "desc">("asc"),
     [selectedUid, setSelectedUid] = useState("");
+  const [profileUpdates, setProfileUpdates] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!showProfileUpdates) return;
+    let active = true;
+    const load = async () => {
+      const profile = await db.allianceProfiles.get("primary");
+      if (active) setProfileUpdates(new Map(
+        profile?.gameObservations?.profileUpdates.map((row) => [row.uid, row.lastUpdateTime]),
+      ));
+    };
+    const refresh = () => void load().catch(() => {});
+    refresh();
+    window.addEventListener("planner-local-change", refresh);
+    return () => {
+      active = false;
+      window.removeEventListener("planner-local-change", refresh);
+    };
+  }, [showProfileUpdates]);
   useEffect(() => {
     const load = () =>
       void db.stateSnapshots
@@ -386,6 +404,7 @@ export function StateHub() {
             {mode === "players" ? (
               <PlayerRanking
                 rows={players}
+                profileUpdates={showProfileUpdates ? profileUpdates : undefined}
                 sexByUid={sexByUid}
                 killsByUid={killsByUid}
                 sort={sort}
@@ -503,6 +522,7 @@ function PowerHistory({
 
 function PlayerRanking({
   rows,
+  profileUpdates,
   sexByUid,
   killsByUid,
   sort,
@@ -512,6 +532,7 @@ function PlayerRanking({
   onSelect,
 }: {
   rows: { row: StatePlayerRanking; before?: StatePlayerRanking }[];
+  profileUpdates?: Map<string, number>;
   sexByUid: Map<string, 0 | 1 | 2 | null | undefined>;
   killsByUid: Map<string, number | null | undefined>;
   sort: SortKey;
@@ -562,6 +583,7 @@ function PlayerRanking({
       </div>
       {rows.map(({ row, before }) => {
         const kills = row.totalKills ?? killsByUid.get(row.uid);
+        const profileUpdate = profileUpdates?.get(row.uid);
         return (
           <article
             key={row.uid}
@@ -581,6 +603,11 @@ function PlayerRanking({
                 {row.allianceTag || "—"}] {row.name}
               </strong>
               <small>{row.allianceName || "No alliance"}</small>
+              {profileUpdate && <small>
+                Profile updated · <time dateTime={new Date(profileUpdate * 1000).toISOString()}>
+                  {new Date(profileUpdate * 1000).toLocaleString()}
+                </time>
+              </small>}
             </span>
             <span>Lv. {row.level ?? "—"}</span>
             <strong>{formatPower(row.power)}</strong>

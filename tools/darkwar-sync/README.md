@@ -23,3 +23,13 @@ Every capture writes `KVI-Game-Data-*.json` to `Desktop\KVI Dark War Sync`, even
 The helper also saves `KVI-Capture-*.pcapng` and `.etl` diagnostic captures. These files make it possible to inspect game-data format changes when a scan produces zero recognized rows; they are not uploaded automatically.
 
 The JSON is the recommended source because it also includes the State snapshot used for update-to-update percentage changes.
+
+When a player profile response is captured, the JSON also includes
+`playerProfileUpdates` entries with the player UID and the game's raw
+`lastUpdateTime` Unix timestamp (seconds). Its meaning as a last-active time
+has not been verified.
+
+`playerPositions` contains UID, X and Y from the Alliance member list and any
+decoded player-base details. Open a player's base or full profile to collect
+those individual responses. Game Map uses the Alliance roster to select which
+captured positions to display.

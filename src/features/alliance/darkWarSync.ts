@@ -1,5 +1,5 @@
 import type { GameRosterEntry } from "../../store/usePlannerStore";
-import type { AllianceRank, StateSnapshot } from "../../types";
+import type { AllianceRank, GamePosition, GameProfileUpdate, StateSnapshot } from "../../types";
 
 const connectionKey = "kvi-dark-war-sync";
 const fragmentKey = "dark-war-sync";
@@ -28,6 +28,8 @@ export interface DarkWarRosterResult {
   stateSnapshot?: StateSnapshot;
   statePlayerKillRanking: StatePlayerKillResult[];
   stateAllianceKillRanking: StateAllianceKillResult[];
+  playerPositions: GamePosition[];
+  playerProfileUpdates: GameProfileUpdate[];
 }
 
 function decodeFragment(value: string) {
@@ -107,7 +109,7 @@ export const checkDarkWarSync = (connection: DarkWarConnection) =>
 export const startDarkWarCapture = (connection: DarkWarConnection) =>
   request<{ capturing: true }>(connection, "/capture/start", "POST");
 export const finishDarkWarCapture = (connection: DarkWarConnection) =>
-  request<DarkWarRosterResult>(connection, "/capture/finish", "POST");
+  request<unknown>(connection, "/capture/finish", "POST").then(parseDarkWarRoster);
 
 type AnyRow = Record<string, unknown>;
 const text = (value: unknown) => (value == null ? "" : String(value).trim());
@@ -163,12 +165,21 @@ function playerRows(rows: AnyRow[]): GameRosterEntry[] {
 export function parseSavedDarkWarRoster(
   valueText: string,
 ): DarkWarRosterResult {
-  const value = JSON.parse(valueText) as AnyRow[] | Record<string, unknown>;
+  return parseDarkWarRoster(JSON.parse(valueText));
+}
+
+function parseDarkWarRoster(input: unknown): DarkWarRosterResult {
+  if (!input || typeof input !== "object")
+    throw new Error("Invalid game data.");
+  const value = input as AnyRow[] | Record<string, unknown>;
   const object = Array.isArray(value) ? {} : value;
   const rawRows = Array.isArray(value)
     ? value
     : (object.players ?? object.members);
-  const capturedAt = text(object.capturedAt) || new Date().toISOString();
+  const captureDate = Date.parse(text(object.capturedAt));
+  const capturedAt = Number.isFinite(captureDate)
+    ? new Date(captureDate).toISOString()
+    : new Date().toISOString();
   const rawSnapshot = object.stateSnapshot as StateSnapshot | undefined;
   const stateSnapshot =
     rawSnapshot &&
@@ -181,6 +192,20 @@ export function parseSavedDarkWarRoster(
         }
       : undefined;
   const players = Array.isArray(rawRows) ? playerRows(rawRows as AnyRow[]) : [];
+  const playerPositions = observationRows(object.playerPositions).flatMap((row) => {
+    const uid = text(row.uid);
+    return uid && isCoordinate(row.x) && isCoordinate(row.y)
+      ? [{ uid, x: row.x, y: row.y }]
+      : [];
+  });
+  const playerProfileUpdates = observationRows(object.playerProfileUpdates).flatMap((row) => {
+    const uid = text(row.uid);
+    const lastUpdateTime = number(row.lastUpdateTime);
+    return uid && Number.isSafeInteger(lastUpdateTime) && lastUpdateTime > 0
+      && lastUpdateTime <= 253402300799
+      ? [{ uid, lastUpdateTime }]
+      : [];
+  });
   const statePlayerKillRanking = Array.isArray(object.statePlayerKillRanking)
     ? (object.statePlayerKillRanking as AnyRow[])
         .map((row) => ({
@@ -208,7 +233,9 @@ export function parseSavedDarkWarRoster(
     !players.length &&
     !stateSnapshot &&
     !statePlayerKillRanking.length &&
-    !stateAllianceKillRanking.length
+    !stateAllianceKillRanking.length &&
+    !playerPositions.length &&
+    !playerProfileUpdates.length
   )
     throw new Error(
       "This file does not contain a valid Alliance roster or State snapshot.",
@@ -220,5 +247,17 @@ export function parseSavedDarkWarRoster(
     stateSnapshot,
     statePlayerKillRanking,
     stateAllianceKillRanking,
+    playerPositions,
+    playerProfileUpdates,
   };
+}
+
+function observationRows(value: unknown): AnyRow[] {
+  return Array.isArray(value)
+    ? value.filter((row): row is AnyRow => Boolean(row) && typeof row === "object")
+    : [];
+}
+
+function isCoordinate(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 999;
 }

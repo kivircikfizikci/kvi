@@ -471,6 +471,46 @@ def analysis_field_paths(value, prefix: str = "", paths: set[str] | None = None)
     return paths
 
 
+def player_profile_updates(messages: list[dict]) -> list[dict]:
+    updates = {}
+    for message in messages:
+        if message.get("direction") != "serverToClient":
+            continue
+        payload = message.get("payload")
+        rows = payload.get("uids") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            uid = str(row.get("uid") or "")
+            timestamp = row.get("lastUpdateTime")
+            if isinstance(timestamp, str) and timestamp.isascii() and timestamp.isdecimal():
+                timestamp = int(timestamp)
+            if uid and type(timestamp) is int and timestamp > 0:
+                updates[uid] = max(timestamp, updates.get(uid, 0))
+    return [{"uid": uid, "lastUpdateTime": timestamp} for uid, timestamp in updates.items()]
+
+
+def player_positions(messages: list[dict], members: list[dict]) -> list[dict]:
+    positions = {}
+    rows = [
+        message["payload"] for message in messages
+        if message.get("direction") == "serverToClient"
+        and isinstance(message.get("payload"), dict)
+        and {"uid", "name", "point", "pointId"} <= message["payload"].keys()
+    ]
+    for row in [*members, *rows]:
+        uid = str(row.get("uid") or "")
+        point = row.get("pointId")
+        if isinstance(point, str) and point.isascii() and point.isdecimal():
+            point = int(point)
+        if uid and type(point) is int and 1 <= point <= 1_000_000:
+            y, x = divmod(point - 1, 1000)
+            positions[uid] = {"uid": uid, "x": x, "y": y}
+    return list(positions.values())
+
+
 def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive: dict | None = None) -> dict:
     requests = {}
     responses = {}
@@ -548,6 +588,8 @@ def extract_game_data(pcap: Path, allow_partial: bool = False, analysis_archive:
         players.append({"uid": player_uid, "name": str(row["name"]), "power": int(row.get("power") or 0), "totalKills": int(row.get("armyKill") or 0), "rank": player_rank, "allianceRank": f"R{player_rank}", "mainBuildingLevel": int(row.get("mainCityLv") or 0), "sex": int(row.get("sex") or 0), "country": country_by_uid.get(player_uid, ""), "allianceTag": alliance_tag, "allianceName": alliance_name})
     captured_at = datetime.now(timezone.utc).isoformat()
     result = {"source": "dark-war-game-data", "capturedAt": captured_at, "players": players}
+    result["playerProfileUpdates"] = player_profile_updates(decoded_messages)
+    result["playerPositions"] = player_positions(decoded_messages, alliance_payload["list"])
     server_payload = responses.get("server.rank:4") or responses.get("server.rank", {})
     server_kill_payload = responses.get("kill.rank") or responses.get("server.rank:3", {})
     server_rows = server_payload.get("serverRanking", []) if isinstance(server_payload, dict) else []
@@ -605,10 +647,22 @@ def merge_game_data_results(sources: list[tuple[str, dict]]) -> dict:
     kills_by_uid = {row.get("uid"): row.get("totalKills") for row in player_kills if row.get("uid")}
     if player_ranking:
         player_ranking = [{**row, "totalKills": kills_by_uid.get(row.get("uid"), row.get("totalKills"))} for row in player_ranking]
+    profile_updates = {}
+    positions = {}
+    for _name, source in sorted(sources, key=lambda item: item[1].get("capturedAt", "")):
+        for row in source.get("playerProfileUpdates", []):
+            uid, timestamp = row["uid"], row["lastUpdateTime"]
+            profile_updates[uid] = max(timestamp, profile_updates.get(uid, 0))
+        positions.update((row["uid"], row) for row in source.get("playerPositions", []))
     result = {
         "source": "dark-war-game-data",
         "capturedAt": captured_at,
         "players": players,
+        "playerPositions": list(positions.values()),
+        "playerProfileUpdates": [
+            {"uid": uid, "lastUpdateTime": timestamp}
+            for uid, timestamp in profile_updates.items()
+        ],
         "statePlayerKillRanking": player_kills,
         "stateAllianceKillRanking": alliance_kills,
     }
