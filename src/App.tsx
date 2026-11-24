@@ -12,7 +12,6 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import {
-  ChevronDown,
   Clock3,
   Cloud,
   Copy,
@@ -515,44 +514,6 @@ export default function App() {
           </nav>
           {activeModule === "rally-planner" && (
             <>
-              <div className="plan-picker">
-                <label>Active plan</label>
-                <div>
-                  <NativeSelect
-                    value={activeId}
-                    onChange={(e) => setActive(e.target.value)}
-                  >
-                    {plans.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                  <ChevronDown className="fake-chevron" />
-                </div>
-                {canEdit && (
-                  <>
-                    <Button variant="ghost" onClick={addPlan} title="New plan">
-                      <Plus />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => plan && duplicatePlan(plan.id)}
-                      title="Duplicate plan"
-                    >
-                      <Copy />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={plans.length <= 1}
-                      onClick={() => plan && deletePlan(plan.id)}
-                      title="Delete plan"
-                    >
-                      <Trash2 />
-                    </Button>
-                  </>
-                )}
-              </div>
               <WorldClocks />
               <div className="top-actions">
                 {canEdit && (
@@ -655,7 +616,56 @@ export default function App() {
               </button>
             </div>
             <main className="workspace">
-              <PlayerRoster onEdit={(p) => canEdit && setEditor(p)} />
+              <PlayerRoster
+                onEdit={(p) => canEdit && setEditor(p)}
+                headerSlot={
+                  <section className="roster-plan-picker">
+                    <label htmlFor="active-rally-plan">Active plan</label>
+                    <div className="roster-plan-row">
+                      <NativeSelect
+                        id="active-rally-plan"
+                        value={activeId}
+                        onChange={(e) => setActive(e.target.value)}
+                      >
+                        {plans.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                      {canEdit && (
+                        <div className="roster-plan-actions">
+                          <Button
+                            variant="ghost"
+                            onClick={addPlan}
+                            title="New plan"
+                            aria-label="New plan"
+                          >
+                            <Plus />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => plan && duplicatePlan(plan.id)}
+                            title="Duplicate plan"
+                            aria-label="Duplicate plan"
+                          >
+                            <Copy />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            disabled={plans.length <= 1}
+                            onClick={() => plan && deletePlan(plan.id)}
+                            title="Delete plan"
+                            aria-label="Delete plan"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                }
+              />
               <section className="center-panel">
                 <div className="round-tabs">
                   <button

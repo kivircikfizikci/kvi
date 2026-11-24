@@ -19,6 +19,39 @@
 .leader-picker .select { height: 32px; }
 .participant-heading { display: flex; align-items: center; justify-content: space-between; min-height: 28px; color: #8e9aad; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 
+.roster-plan-picker {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  background: #0d131c;
+}
+
+.roster-plan-picker > label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--orange2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.roster-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.roster-plan-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.roster-plan-actions .btn {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+}
+
 @media (max-width: 600px) {
   .round-time-controls { display: grid; grid-template-columns: auto 1fr; gap: 8px; }
   .round-time-controls > strong { margin-right: 0; }
