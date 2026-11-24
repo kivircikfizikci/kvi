@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Input, NativeSelect } from "./components/ui";
+import { WorldClocks } from "./components/WorldClocks";
 import { exportBoardPng } from "./features/import-export/dataTools";
 import { Overview } from "./features/planning/Overview";
 import { RallyBoard } from "./features/planning/RallyBoard";
@@ -612,6 +613,7 @@ export default function App() {
             </div>
           )}
         </header>
+        <WorldClocks />
         {(error || cloud.error) && (
           <div className="toast" role="alert">
             <span>{error || cloud.error}</span>

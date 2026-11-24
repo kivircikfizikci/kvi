@@ -1,0 +1,148 @@
+.world-clock-bar {
+  position: sticky;
+  top: 72px;
+  z-index: 19;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 5px 20px;
+  border-bottom: 1px solid var(--line);
+  background: #0a0f16ed;
+  backdrop-filter: blur(10px);
+}
+
+.world-clock-heading,
+.world-clock-list,
+.world-clock {
+  display: flex;
+  align-items: center;
+}
+
+.world-clock-heading {
+  gap: 7px;
+  color: #77859a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.world-clock-heading svg {
+  color: var(--orange2);
+}
+
+.world-clock-list {
+  gap: 6px;
+}
+
+.world-clock {
+  min-width: 165px;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 4px 9px;
+  border: 1px solid #283342;
+  border-radius: 6px;
+  background: #111824;
+}
+
+.world-clock span,
+.world-clock strong,
+.world-clock small {
+  display: block;
+}
+
+.world-clock strong {
+  color: #cdd5e1;
+  font-size: 0.72rem;
+}
+
+.world-clock span small {
+  margin-top: 1px;
+  color: #6f7d91;
+  font-size: 0.6rem;
+}
+
+.world-clock time {
+  color: #ffb47f;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.world-clock time small {
+  display: inline;
+  margin-right: 5px;
+  color: #77859a;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+.workspace,
+.battle-shell {
+  height: calc(100vh - 116px);
+}
+
+.alliance-profile {
+  top: 128px;
+}
+
+@media (max-width: 900px) {
+  .battle-shell {
+    height: auto;
+  }
+}
+
+@media (max-width: 780px) {
+  .world-clock-bar {
+    position: static;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 42px;
+    padding: 5px 8px;
+    overflow-x: auto;
+  }
+
+  .world-clock-heading span {
+    display: none;
+  }
+
+  .world-clock-list {
+    flex: 1;
+  }
+
+  .world-clock {
+    min-width: 0;
+    flex: 1;
+    gap: 6px;
+  }
+
+  .world-clock span small,
+  .world-clock time small {
+    display: none;
+  }
+
+  .workspace {
+    height: auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .world-clock-heading {
+    display: none;
+  }
+
+  .world-clock {
+    padding-inline: 6px;
+  }
+
+  .world-clock strong {
+    font-size: 0.62rem;
+  }
+
+  .world-clock time {
+    font-size: 0.68rem;
+  }
+}
