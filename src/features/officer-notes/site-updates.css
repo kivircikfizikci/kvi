@@ -1,17 +1,21 @@
 .notes-columns {
   display: grid;
-  grid-template-columns: minmax(220px, 254px) minmax(0, 1fr);
+  grid-template-columns: minmax(224px, 1fr) minmax(0, 1164px) minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
-  margin-top: 12px;
+  gap: 16px;
+  max-width: none;
+  padding-inline: clamp(12px, 1.8vw, 34px);
 }
 
-.notes-content .notes-summary {
-  margin-top: 0;
+.notes-content {
+  min-width: 0;
 }
 
 .notes-updates {
   min-width: 0;
+  width: 100%;
+  max-width: 324px;
+  justify-self: end;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
@@ -32,7 +36,7 @@
 }
 
 .notes-updates ul {
-  max-height: 28rem;
+  max-height: min(38rem, 65vh);
   overflow-y: auto;
   list-style: none;
   margin: 0;
@@ -64,9 +68,19 @@
   line-height: 1.45;
 }
 
+@media (max-width: 1610px) {
+  .notes-columns {
+    grid-template-columns: clamp(220px, 20vw, 300px) minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 780px) {
   .notes-columns {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .notes-updates {
+    max-width: none;
   }
 
   .notes-updates ul {
