@@ -75,7 +75,15 @@
   margin-left: 0;
 }
 
-@media (max-width: 1180px) and (min-width: 781px) {
+@media (max-width: 1450px) and (min-width: 781px) {
+  .topbar {
+    gap: 14px;
+  }
+
+  .brand {
+    min-width: 240px;
+  }
+
   .world-clock {
     min-width: 82px;
     padding-inline: 5px;
@@ -83,6 +91,12 @@
 
   .world-clock time {
     font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 1180px) and (min-width: 781px) {
+  .navbar-session .badge {
+    display: none;
   }
 }
 

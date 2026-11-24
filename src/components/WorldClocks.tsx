@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 export const WORLD_CLOCKS = [
+  { label: "Server Time", city: "Türkiye −5h", timeZone: "Etc/GMT+2" },
   { label: "America", city: "New York", timeZone: "America/New_York" },
   { label: "Europe", city: "Berlin", timeZone: "Europe/Berlin" },
   { label: "Asia", city: "Seoul", timeZone: "Asia/Seoul" },

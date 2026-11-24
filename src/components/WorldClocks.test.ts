@@ -5,6 +5,7 @@ describe("world clocks", () => {
   it("converts one instant to each configured regional time", () => {
     const instant = new Date("2026-07-01T12:00:00Z");
 
+    expect(formatWorldClock(instant, "Etc/GMT+2").time).toBe("10:00:00");
     expect(formatWorldClock(instant, "America/New_York").time).toBe(
       "08:00:00",
     );
