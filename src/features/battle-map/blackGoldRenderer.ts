@@ -2,7 +2,14 @@ import type { BlackGoldParticipant } from '../../types'
 import { BGB_GRID_SIZE, BGB_OBJECTIVE_SIZE, BGB_PARTICIPANT_SIZE, BGB_TILE_SIZE, BLACK_GOLD_OBJECTIVES, type BlackGoldCamera, type BlackGoldObjective, footprint, projectBlackGold, unprojectBlackGold } from './blackGoldGeometry'
 import { drawMapLabel, drawPlayerMarker } from './mapRenderer'
 
-interface BlackGoldRenderOptions{selectedId?:string|null;pointer?:{x:number;y:number}|null;exportMode?:boolean;teamColor:string;teamName:string}
+interface BlackGoldRenderOptions {
+  selectedId?: string | null;
+  pointer?: { x: number; y: number } | null;
+  exportMode?: boolean;
+  teamColor: string;
+  teamName: string;
+  routes?: { from: {x:number;y:number}; to: {x:number;y:number}; color: string; highlighted: boolean }[];
+}
 const objectiveColors={
   'golden-ball':'#f6c84a',
   'field-hospital':'#45c58c',
@@ -42,9 +49,32 @@ export function renderBlackGoldMap(ctx:CanvasRenderingContext2D,w:number,h:numbe
   const scale=Math.max(.72,Math.min(1.35,camera.zoom*3.8)),showLabels=camera.zoom>=.18||Boolean(options.exportMode)
   for(const objective of BLACK_GOLD_OBJECTIVES){const color=objective.type==='headquarters'?(objective.side==='red'?'#d45757':'#5b91e8'):objectiveColors[objective.type];drawFootprint(ctx,camera,w,h,objective.x,objective.y,BGB_OBJECTIVE_SIZE,`${color}20`,`${color}88`);const p=projectBlackGold(objective,camera,w,h);objectiveIcon(ctx,objective,p.x,p.y,scale);if(showLabels)drawMapLabel(ctx,p.x,p.y+24*scale,objective.name,`X:${objective.x}  Y:${objective.y}`,color)}
   const placed=participants.filter(participant=>participant.x!==undefined&&participant.y!==undefined)
+  for (const route of options.routes ?? []) {
+    const from = projectBlackGold(route.from, camera, w, h);
+    const to = projectBlackGold(route.to, camera, w, h);
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.save();
+    ctx.strokeStyle = route.color;
+    ctx.fillStyle = route.color;
+    ctx.globalAlpha = route.highlighted ? 1 : .64;
+    ctx.lineWidth = route.highlighted ? 3 : 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - 9 * Math.cos(angle - .45), to.y - 9 * Math.sin(angle - .45));
+    ctx.lineTo(to.x - 9 * Math.cos(angle + .45), to.y - 9 * Math.sin(angle + .45));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
   for(const participant of placed){drawFootprint(ctx,camera,w,h,participant.x!,participant.y!,BGB_PARTICIPANT_SIZE,participant.id===options.selectedId?`${options.teamColor}55`:`${options.teamColor}25`,participant.id===options.selectedId?'#ffffff':options.teamColor)}
   for(const participant of placed){const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h);drawPlayerMarker(ctx,p.x,p.y,participant.color||options.teamColor,scale,true)}
-  if(showLabels)for(const participant of placed){const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h);drawMapLabel(ctx,p.x,p.y-31,participant.name,`X:${participant.x}  Y:${participant.y}`,participant.color||options.teamColor)}
+  for(const participant of placed){if(!showLabels&&participant.id!==options.selectedId)continue;const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h);drawMapLabel(ctx,p.x,p.y-31,participant.name,`X:${participant.x}  Y:${participant.y}`,participant.color||options.teamColor)}
   if(options.pointer&&camera.zoom>=.2){const x=Math.round(options.pointer.x),y=Math.round(options.pointer.y),p=projectBlackGold({x,y},camera,w,h),size=BGB_TILE_SIZE*camera.zoom;ctx.strokeStyle='#ffe08a';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2,p.y-size/2,size,size);ctx.fillStyle='#ffe7a8';ctx.font='11px Inter, system-ui';ctx.fillText(`${x}, ${y}`,p.x+8,p.y-8)}
   ctx.fillStyle='rgba(7,10,12,.82)';ctx.fillRect(12,h-38,285,26);ctx.fillStyle='#d7cfba';ctx.font='12px Inter, system-ui';ctx.fillText(`${options.teamName} · ${placed.length} placed · ${Math.round(camera.zoom*100)}%`,22,h-21)
 }

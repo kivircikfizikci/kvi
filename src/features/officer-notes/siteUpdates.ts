@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-25",
+    title: "Black Gold Battlefield plans",
+    summary: "Generate opening positions by roster power, scrub through match phases, and replace a starter with a reserve from a selected minute.",
+  },
+  {
+    date: "2026-11-25",
     title: "Power chart labels",
     summary: "Power history charts show a value at every point and its date and time along the bottom.",
   },

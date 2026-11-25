@@ -89,6 +89,7 @@ export interface BlackGoldParticipant {
   role: BlackGoldParticipantRole;
   x?: number;
   y?: number;
+  positionLocked?: boolean;
   color: string;
   createdAt: string;
   updatedAt: string;
@@ -98,7 +99,23 @@ export interface BlackGoldTeam {
   name: string;
   eventTime: string;
   participants: BlackGoldParticipant[];
+  side?: "red" | "blue";
+  timing?: { buildings: number; firstBall: number; secondBall: number; end: number };
+  strategy?: BlackGoldAssignment[];
+  substitutions?: BlackGoldSubstitution[];
   updatedAt: string;
+}
+export interface BlackGoldAssignment {
+  participantId: string;
+  refineryId: string;
+  buildingId?: string;
+  buildingAction?: "Capture" | "Support";
+  centerCrew: boolean;
+}
+export interface BlackGoldSubstitution {
+  slotId: string;
+  reserveId: string;
+  minute: number;
 }
 export interface AllianceProfile {
   id: "primary";
