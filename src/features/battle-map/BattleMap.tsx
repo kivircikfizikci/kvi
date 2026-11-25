@@ -3,14 +3,16 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Button } from '../../components/ui'
 import { db } from '../../db'
 import type { MapTower } from '../../types'
-import { exportCamera, TILE_HEIGHT, TILE_WIDTH, unproject, type Camera } from './mapGeometry'
+import { exportCamera, TILE_HEIGHT, TILE_WIDTH, type Camera } from './mapGeometry'
 import { renderBattleMap } from './mapRenderer'
 import { BlackGoldBattlefield } from './BlackGoldBattlefield'
+import { useMapPinch, zoomMapBetween } from './useMapPinch'
 import './battle-map.css'
 
 const defaultCamera: Camera = { x: 501.5, y: 499.5, zoom: .075 }
 const clampCenter = (value: number) => Math.max(0, Math.min(999, value))
 const clampZoom = (value: number) => Math.max(.008, Math.min(1, value))
+const zoomLimits = { tileX: TILE_WIDTH, tileY: -TILE_HEIGHT, clampCenter, clampZoom }
 
 function GameMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -18,6 +20,7 @@ function GameMap() {
   const drag = useRef<{ x: number; y: number; camera: Camera } | null>(null)
   const [size, setSize] = useState({ width: 1000, height: 700 })
   const [camera, setCamera] = useState(defaultCamera)
+  const pinch = useMapPinch(setCamera, size, zoomLimits)
   const [towers, setTowers] = useState<MapTower[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [loaded, setLoaded] = useState(false)
@@ -92,23 +95,15 @@ function GameMap() {
     const wheel = (event: WheelEvent) => {
       event.preventDefault()
       const rect = canvas.getBoundingClientRect()
-      const x = event.clientX - rect.left
-      const y = event.clientY - rect.top
-      setCamera(current => {
-        const world = unproject(x, y, current, size.width, size.height)
-        const zoom = clampZoom(current.zoom * (event.deltaY > 0 ? .82 : 1.22))
-        return {
-          x: clampCenter(world.x - (x - size.width / 2) / (TILE_WIDTH * zoom)),
-          y: clampCenter(world.y + (y - size.height / 2) / (TILE_HEIGHT * zoom)),
-          zoom,
-        }
-      })
+      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      setCamera(current => zoomMapBetween(current, point, point, event.deltaY > 0 ? .82 : 1.22, size, zoomLimits))
     }
     canvas.addEventListener('wheel', wheel, { passive: false })
     return () => canvas.removeEventListener('wheel', wheel)
   }, [size])
 
   function pan(event: PointerEvent<HTMLCanvasElement>) {
+    if (pinch.move(event)) return
     const start = drag.current
     if (!start) return
     setCamera({
@@ -116,6 +111,11 @@ function GameMap() {
       y: clampCenter(start.camera.y + (event.clientY - start.y) / (TILE_HEIGHT * start.camera.zoom)),
       zoom: start.camera.zoom,
     })
+  }
+
+  function endGesture(event: PointerEvent<HTMLCanvasElement>) {
+    pinch.end(event)
+    drag.current = null
   }
 
   function exportPng() {
@@ -163,7 +163,7 @@ function GameMap() {
           <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
           <Button variant="secondary" aria-label="Fit alliance positions" onClick={() => setCamera(towers.length ? exportCamera(towers, size.width, size.height) : defaultCamera)}><Crosshair />Fit map</Button>
         </div>
-        <span>{Math.round(camera.zoom * 100)}% · Drag to pan</span>
+        <span>{Math.round(camera.zoom * 100)}% · Pinch or scroll to zoom</span>
         <Button onClick={exportPng}><Download />Export PNG</Button>
       </div>
       <div ref={wrapRef} className="map-canvas-wrap">
@@ -171,10 +171,12 @@ function GameMap() {
           onPointerDown={event => {
             if (event.button !== 0) return
             event.currentTarget.setPointerCapture(event.pointerId)
-            drag.current = { x: event.clientX, y: event.clientY, camera }
+            drag.current = pinch.start(event) ? null : { x: event.clientX, y: event.clientY, camera }
           }}
           onPointerMove={pan}
-          onLostPointerCapture={() => { drag.current = null }}
+          onPointerUp={endGesture}
+          onPointerCancel={endGesture}
+          onLostPointerCapture={endGesture}
         />
       </div>
     </section>

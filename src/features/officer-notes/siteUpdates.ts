@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-26",
+    title: "Mobile battle map zoom",
+    summary: "Pinch to zoom on Game Map and Black Gold Battlefield. Pinching clears any pending player move.",
+  },
+  {
+    date: "2026-11-26",
     title: "Black Gold roster availability",
     summary: "Player selection hides starters and reserves already assigned to either match team.",
   },

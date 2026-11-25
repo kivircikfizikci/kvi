@@ -13,6 +13,7 @@ import {
 } from './blackGoldGeometry'
 import { renderBlackGoldMap } from './blackGoldRenderer'
 import { blackGoldRosterIndex } from './blackGoldRoster'
+import { useMapPinch, zoomMapBetween } from './useMapPinch'
 import {
   BGB_DEFAULT_TIMING, bgbPhases, blackGoldPlanAt, formatBgbMinute,
   generateBlackGoldOpening, replaceBlackGoldPlayer, reserveOptions, validateBgbTiming,
@@ -23,7 +24,8 @@ import './black-gold-timeline.css'
 const SIDE_COLORS = { red: '#f07370', blue: '#38bdf8' }
 const initialCamera: BlackGoldCamera = { x: 74, y: 74, zoom: .18 }
 const clampCenter = (value: number) => Math.max(0, Math.min(BGB_GRID_SIZE - 1, value))
-const clampZoom = (value: number) => Math.max(.055, Math.min(1.2, value))
+const clampZoom = (value: number) => Math.max(.025, Math.min(1.2, value))
+const zoomLimits = { tileX: BGB_TILE_SIZE, tileY: BGB_TILE_SIZE, clampCenter, clampZoom }
 const createTeams = (): BlackGoldTeam[] => [
   { id: 'team-a', name: 'Team A', eventTime: '', participants: [], updatedAt: now() },
   { id: 'team-b', name: 'Team B', eventTime: '', participants: [], updatedAt: now() },
@@ -31,7 +33,7 @@ const createTeams = (): BlackGoldTeam[] => [
 
 type Mode = 'view' | 'move' | 'place'
 type Drag = {
-  type: 'pan' | 'move' | 'place'
+  type: 'pan' | 'move' | 'place' | 'select'
   x: number
   y: number
   camera: BlackGoldCamera
@@ -51,6 +53,7 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   const [loaded, setLoaded] = useState(false)
   const [size, setSize] = useState({ width: 900, height: 580 })
   const [camera, setCamera] = useState(initialCamera)
+  const pinch = useMapPinch(setCamera, size, zoomLimits)
   const [minute, setMinute] = useState(0)
   const [mode, setMode] = useState<Mode>('view')
   const [selectedId, setSelectedId] = useState<string>()
@@ -145,15 +148,8 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
       const bounds = canvas.getBoundingClientRect()
       const x = event.clientX - bounds.left
       const y = event.clientY - bounds.top
-      setCamera(current => {
-        const world = unprojectBlackGold(x, y, current, size.width, size.height)
-        const next = clampZoom(current.zoom * (event.deltaY > 0 ? .82 : 1.22))
-        return {
-          x: clampCenter(world.x - (x - size.width / 2) / (BGB_TILE_SIZE * next)),
-          y: clampCenter(world.y - (y - size.height / 2) / (BGB_TILE_SIZE * next)),
-          zoom: next,
-        }
-      })
+      const point = { x, y }
+      setCamera(current => zoomMapBetween(current, point, point, event.deltaY > 0 ? .82 : 1.22, size, zoomLimits))
     }
     canvas.addEventListener('wheel', zoom, { passive: false })
     return () => canvas.removeEventListener('wheel', zoom)
@@ -258,11 +254,18 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
     const left = event.button === 0
     if (!left && event.button !== 1 && event.button !== 2) return
     event.currentTarget.setPointerCapture(event.pointerId)
+    if (pinch.start(event)) {
+      drag.current = null
+      setPreview(undefined)
+      return
+    }
     if (left && hit) {
-      setSelectedId(hit.id)
+      if (event.pointerType !== 'touch') setSelectedId(hit.id)
       if (mode === 'move' && minute === 0 && editableOpening && !hit.positionLocked) {
         const world = unprojectBlackGold(point.x, point.y, camera, size.width, size.height)
         drag.current = { ...point, type: 'move', camera, slotId: hit.id, offset: { x: hit.x! - world.x, y: hit.y! - world.y } }
+      } else if (event.pointerType === 'touch') {
+        drag.current = { ...point, type: 'select', camera, slotId: hit.id }
       }
     } else if (left && mode === 'place' && minute === 0 && editableOpening && selected) {
       drag.current = { ...point, type: 'place', camera, slotId: selected.slot.id }
@@ -277,9 +280,14 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   }
 
   function onPointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (pinch.move(event)) return
     const current = drag.current
     if (!current) return
     const point = mapPoint(event)
+    if (current.type === 'select' && Math.hypot(point.x - current.x, point.y - current.y) > 5) {
+      current.type = 'pan'
+      current.slotId = undefined
+    }
     if (current.type === 'pan') {
       setCamera({
         ...current.camera,
@@ -293,18 +301,27 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   }
 
   function onPointerUp(event: PointerEvent<HTMLCanvasElement>) {
+    const usedPinch = pinch.end(event)
     const current = drag.current
     drag.current = null
     setPreview(undefined)
-    if (!current?.slotId || !editableOpening || minute !== 0) return
+    if (usedPinch || !current?.slotId) return
     const point = mapPoint(event)
     const distance = Math.hypot(point.x - current.x, point.y - current.y)
+    if (current.type === 'move' || (current.type === 'select' && distance <= 5)) setSelectedId(current.slotId)
+    if (current.type === 'select' || !editableOpening || minute !== 0) return
     if (current.type === 'move' ? distance <= 3 : distance > 5) return
     const next = getPlot(point, current.offset)
     const error = validateBlackGoldPosition(next.x, next.y, placed, current.slotId)
     if (error) { setMessage(error); return }
     updatePosition(current.slotId, next)
     if (current.type === 'place') setMode('move')
+  }
+
+  function cancelPointer(event: PointerEvent<HTMLCanvasElement>) {
+    pinch.end(event)
+    drag.current = null
+    setPreview(undefined)
   }
 
   function confirmReplacement() {
@@ -445,7 +462,7 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
           <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
           <Button variant="secondary" onClick={() => setCamera(blackGoldExportCamera(size.width, size.height))}><Crosshair />Fit</Button>
         </div>
-        <span>Drag empty space to pan · Scroll to zoom</span>
+        <span>Drag to pan · Pinch or scroll to zoom</span>
         <Button onClick={exportPng}><Download />Export PNG</Button>
       </div>
       <section className="bgb-timeline" aria-label="Match timeline">
@@ -475,7 +492,7 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
         </div>
       </section>}
       <div ref={wrapRef} className={`map-canvas-wrap bgb-canvas-wrap mode-${mode === 'move' ? 'edit' : mode}`}>
-        <canvas ref={canvasRef} aria-label="Black Gold Battlefield plan map" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onLostPointerCapture={() => { drag.current = null; setPreview(undefined) }} onContextMenu={event => event.preventDefault()} />
+        <canvas ref={canvasRef} aria-label="Black Gold Battlefield plan map" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={cancelPointer} onLostPointerCapture={cancelPointer} onContextMenu={event => event.preventDefault()} />
       </div>
     </section>
     <Modal open={canEdit && Boolean(replacement)} onOpenChange={open => { if (!open) setReplacement(undefined) }} title="Replace Player">
