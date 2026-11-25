@@ -37,7 +37,18 @@ export const clampBlackGoldCoordinate=(value:number)=>Math.max(1,Math.min(BGB_GR
 
 export function participantAtScreenPoint(participants:BlackGoldParticipant[],sx:number,sy:number,camera:BlackGoldCamera,width:number,height:number){
   const radius=Math.max(19,BGB_TILE_SIZE*camera.zoom*1.7)
-  return [...participants].reverse().find(participant=>participant.x!==undefined&&participant.y!==undefined&&Math.hypot(sx-projectBlackGold({x:participant.x,y:participant.y},camera,width,height).x,sy-projectBlackGold({x:participant.x,y:participant.y},camera,width,height).y)<=radius)
+  let nearest: BlackGoldParticipant | undefined
+  let bestDistance = radius
+  for (const participant of participants) {
+    if (participant.x === undefined || participant.y === undefined) continue
+    const point = projectBlackGold({ x: participant.x, y: participant.y }, camera, width, height)
+    const distance = Math.hypot(sx - point.x, sy - point.y)
+    if (distance <= bestDistance) {
+      nearest = participant
+      bestDistance = distance
+    }
+  }
+  return nearest
 }
 
 export function validateBlackGoldPosition(x:number,y:number,participants:BlackGoldParticipant[],ignoreId?:string):string|null{

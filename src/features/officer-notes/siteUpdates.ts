@@ -1,5 +1,10 @@
 export const siteUpdates = [
   {
+    date: "2026-11-26",
+    title: "Clearer Black Gold Battlefield maps",
+    summary: "Movement arrows are thicker. Player labels fit around nearby markers and the selected player’s label takes priority.",
+  },
+  {
     date: "2026-11-25",
     title: "Black Gold Battlefield plans",
     summary: "Generate opening positions by roster power, scrub through match phases, and replace a starter with a reserve from a selected minute.",

@@ -1,6 +1,7 @@
 import type { BlackGoldParticipant } from '../../types'
-import { BGB_GRID_SIZE, BGB_OBJECTIVE_SIZE, BGB_PARTICIPANT_SIZE, BGB_TILE_SIZE, BLACK_GOLD_OBJECTIVES, type BlackGoldCamera, type BlackGoldObjective, footprint, projectBlackGold, unprojectBlackGold } from './blackGoldGeometry'
-import { drawMapLabel, drawPlayerMarker } from './mapRenderer'
+import { BGB_GRID_SIZE, BGB_OBJECTIVE_SIZE, BGB_PARTICIPANT_SIZE, BGB_TILE_SIZE, BLACK_GOLD_OBJECTIVES, type BlackGoldCamera, type BlackGoldObjective, type BlackGoldPoint, type BlackGoldRect, footprint, projectBlackGold, unprojectBlackGold } from './blackGoldGeometry'
+import { placeBlackGoldLabel } from './blackGoldLabels'
+import { drawPlayerMarker } from './mapRenderer'
 
 interface BlackGoldRenderOptions {
   selectedId?: string | null;
@@ -16,6 +17,75 @@ const objectiveColors={
   'military-center':'#ef7b45',
   'oil-refinery':'#d49a42',
   headquarters:'#5c8fd9',
+}
+
+interface MapLabel {
+  anchor: BlackGoldPoint;
+  title: string;
+  subtitle?: string;
+  color: string;
+  selected?: boolean;
+}
+
+function drawBlackGoldLabels(
+  ctx: CanvasRenderingContext2D, width: number, height: number,
+  labels: MapLabel[], blocked: BlackGoldRect[],
+) {
+  ctx.save();
+  ctx.font = '700 11px Inter, system-ui, sans-serif';
+  const fitted = labels.flatMap(label => {
+    const { anchor, subtitle, selected } = label;
+    if (anchor.x < 0 || anchor.x > width || anchor.y < 0 || anchor.y > height) return [];
+    const limit = Math.max(30, Math.min(width - 24, selected ? 200 : 102));
+    let title = label.title;
+    if (ctx.measureText(title).width > limit) {
+      const chars = Array.from(title);
+      do { chars.pop(); title = chars.join('') + '…'; }
+      while (chars.length && ctx.measureText(title).width > limit);
+    }
+    const boxWidth = Math.max(ctx.measureText(title).width, subtitle ? ctx.measureText(subtitle).width : 0) + 14;
+    const rect = placeBlackGoldLabel(anchor, boxWidth, subtitle ? 32 : 20, { width, height }, blocked, selected);
+    if (!rect) return [];
+    blocked.push(rect);
+    return [{ ...label, title, rect }];
+  });
+
+  for (const { anchor, rect, color, selected } of fitted) {
+    const x = Math.max(rect.minX, Math.min(rect.maxX, anchor.x));
+    const y = Math.max(rect.minY, Math.min(rect.maxY, anchor.y));
+    const distance = Math.hypot(x - anchor.x, y - anchor.y);
+    if (!distance) continue;
+    const start = Math.min(16 / distance, 1);
+    ctx.globalAlpha = selected ? .95 : .55;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = selected ? 1.8 : 1;
+    ctx.beginPath();
+    ctx.moveTo(anchor.x + (x - anchor.x) * start, anchor.y + (y - anchor.y) * start);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const { title, subtitle, color, selected, rect } of fitted) {
+    const center = (rect.minX + rect.maxX) / 2;
+    ctx.fillStyle = 'rgba(8,12,18,.94)';
+    ctx.strokeStyle = selected ? '#fff4d9' : color;
+    ctx.lineWidth = selected ? 1.5 : 1;
+    ctx.beginPath();
+    ctx.roundRect(rect.minX, rect.minY, rect.maxX - rect.minX, rect.maxY - rect.minY, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '700 11px Inter, system-ui, sans-serif';
+    ctx.fillStyle = '#f3f6fb';
+    ctx.fillText(title, center, rect.minY + 10);
+    if (subtitle) {
+      ctx.font = '10px Inter, system-ui, sans-serif';
+      ctx.fillStyle = '#a8b5c6';
+      ctx.fillText(subtitle, center, rect.minY + 23);
+    }
+  }
+  ctx.restore();
 }
 
 function drawFootprint(ctx:CanvasRenderingContext2D,camera:BlackGoldCamera,w:number,h:number,x:number,y:number,size:number,fill:string,stroke:string){
@@ -46,8 +116,19 @@ export function renderBlackGoldMap(ctx:CanvasRenderingContext2D,w:number,h:numbe
   for(let x=Math.floor(minX/step)*step;x<=maxX;x+=step){const a=projectBlackGold({x:x-.5,y:minY-.5},camera,w,h),b=projectBlackGold({x:x-.5,y:maxY-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
   for(let y=Math.floor(minY/step)*step;y<=maxY;y+=step){const a=projectBlackGold({x:minX-.5,y:y-.5},camera,w,h),b=projectBlackGold({x:maxX-.5,y:y-.5},camera,w,h);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
   ctx.restore()
-  const scale=Math.max(.72,Math.min(1.35,camera.zoom*3.8)),showLabels=camera.zoom>=.18||Boolean(options.exportMode)
-  for(const objective of BLACK_GOLD_OBJECTIVES){const color=objective.type==='headquarters'?(objective.side==='red'?'#d45757':'#5b91e8'):objectiveColors[objective.type];drawFootprint(ctx,camera,w,h,objective.x,objective.y,BGB_OBJECTIVE_SIZE,`${color}20`,`${color}88`);const p=projectBlackGold(objective,camera,w,h);objectiveIcon(ctx,objective,p.x,p.y,scale);if(showLabels)drawMapLabel(ctx,p.x,p.y+24*scale,objective.name,`X:${objective.x}  Y:${objective.y}`,color)}
+  const scale=Math.max(.72,Math.min(1.35,camera.zoom*3.8))
+  const showLabels=camera.zoom>=.13||Boolean(options.exportMode)
+  const showCoordinates=camera.zoom>=.38||Boolean(options.exportMode)
+  const blocked: BlackGoldRect[] = [{ minX: 12, maxX: 297, minY: h - 38, maxY: h - 12 }];
+  const objectiveLabels: MapLabel[] = [];
+  for(const objective of BLACK_GOLD_OBJECTIVES){
+    const color=objective.type==='headquarters'?(objective.side==='red'?'#d45757':'#5b91e8'):objectiveColors[objective.type]
+    drawFootprint(ctx,camera,w,h,objective.x,objective.y,BGB_OBJECTIVE_SIZE,`${color}20`,`${color}88`)
+    const p=projectBlackGold(objective,camera,w,h)
+    objectiveIcon(ctx,objective,p.x,p.y,scale)
+    blocked.push(footprint(p.x,p.y,36*scale))
+    if(showLabels) objectiveLabels.push({ anchor:p, title:objective.name, color, subtitle:showCoordinates?`X:${objective.x}  Y:${objective.y}`:undefined })
+  }
   const placed=participants.filter(participant=>participant.x!==undefined&&participant.y!==undefined)
   for (const route of options.routes ?? []) {
     const from = projectBlackGold(route.from, camera, w, h);
@@ -56,9 +137,11 @@ export function renderBlackGoldMap(ctx:CanvasRenderingContext2D,w:number,h:numbe
     ctx.save();
     ctx.strokeStyle = route.color;
     ctx.fillStyle = route.color;
-    ctx.globalAlpha = route.highlighted ? 1 : .64;
-    ctx.lineWidth = route.highlighted ? 3 : 1.5;
-    ctx.setLineDash([6, 4]);
+    const head = route.highlighted ? 16 : 13;
+    ctx.globalAlpha = route.highlighted ? 1 : .82;
+    ctx.lineWidth = route.highlighted ? 5 : 3.2;
+    ctx.lineCap = 'round';
+    ctx.setLineDash([9, 6]);
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
@@ -66,15 +149,24 @@ export function renderBlackGoldMap(ctx:CanvasRenderingContext2D,w:number,h:numbe
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(to.x, to.y);
-    ctx.lineTo(to.x - 9 * Math.cos(angle - .45), to.y - 9 * Math.sin(angle - .45));
-    ctx.lineTo(to.x - 9 * Math.cos(angle + .45), to.y - 9 * Math.sin(angle + .45));
+    ctx.lineTo(to.x - head * Math.cos(angle - .53), to.y - head * Math.sin(angle - .53));
+    ctx.lineTo(to.x - head * Math.cos(angle + .53), to.y - head * Math.sin(angle + .53));
     ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
   for(const participant of placed){drawFootprint(ctx,camera,w,h,participant.x!,participant.y!,BGB_PARTICIPANT_SIZE,participant.id===options.selectedId?`${options.teamColor}55`:`${options.teamColor}25`,participant.id===options.selectedId?'#ffffff':options.teamColor)}
-  for(const participant of placed){const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h);drawPlayerMarker(ctx,p.x,p.y,participant.color||options.teamColor,scale,true)}
-  for(const participant of placed){if(!showLabels&&participant.id!==options.selectedId)continue;const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h);drawMapLabel(ctx,p.x,p.y-31,participant.name,`X:${participant.x}  Y:${participant.y}`,participant.color||options.teamColor)}
+  const participantLabels: MapLabel[] = [];
+  for(const participant of placed){
+    const p=projectBlackGold({x:participant.x!,y:participant.y!},camera,w,h)
+    const color=participant.color||options.teamColor
+    const selected=participant.id===options.selectedId
+    drawPlayerMarker(ctx,p.x,p.y,color,scale,true)
+    blocked.push(footprint(p.x,p.y,30*scale))
+    if(showLabels||selected) participantLabels.push({ anchor:p, title:participant.name, color, selected, subtitle:selected||showCoordinates?`X:${participant.x}  Y:${participant.y}`:undefined })
+  }
+  participantLabels.sort((a,b)=>Number(b.selected)-Number(a.selected))
+  drawBlackGoldLabels(ctx,w,h,[...participantLabels,...objectiveLabels],blocked)
   if(options.pointer&&camera.zoom>=.2){const x=Math.round(options.pointer.x),y=Math.round(options.pointer.y),p=projectBlackGold({x,y},camera,w,h),size=BGB_TILE_SIZE*camera.zoom;ctx.strokeStyle='#ffe08a';ctx.lineWidth=2;ctx.strokeRect(p.x-size/2,p.y-size/2,size,size);ctx.fillStyle='#ffe7a8';ctx.font='11px Inter, system-ui';ctx.fillText(`${x}, ${y}`,p.x+8,p.y-8)}
   ctx.fillStyle='rgba(7,10,12,.82)';ctx.fillRect(12,h-38,285,26);ctx.fillStyle='#d7cfba';ctx.font='12px Inter, system-ui';ctx.fillText(`${options.teamName} · ${placed.length} placed · ${Math.round(camera.zoom*100)}%`,22,h-21)
 }
