@@ -104,24 +104,21 @@ const distinctPlayerStateSnapshots = (snapshots: StateSnapshot[]) => {
   });
 };
 
-function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
-  const [rangeDays, setRangeDays] = useState<GrowthRangeDays>(1);
-  const [selectedUid, setSelectedUid] = useState("");
-  const available = distinctAllianceSnapshots(snapshots);
-  const latest = available[0];
+function AllianceGrowthPanel({
+  snapshots, allianceSnapshotCount, latest, baseline, rangeDays, setRangeDays, selectedUid, setSelectedUid, selectedPlayer,
+}: {
+  snapshots: StateSnapshot[];
+  allianceSnapshotCount: number;
+  latest?: StateSnapshot;
+  baseline?: StateSnapshot;
+  rangeDays: GrowthRangeDays;
+  setRangeDays: (days: GrowthRangeDays) => void;
+  selectedUid: string;
+  setSelectedUid: (uid: string) => void;
+  selectedPlayer?: Player;
+}) {
   if (!latest?.allianceMembers?.length) return null;
   const latestAt = new Date(latest.capturedAt).getTime();
-  const baselineCandidates = [
-    ...available.slice(1),
-    ...distinctPlayerStateSnapshots(snapshots).filter(
-      (snapshot) => snapshot.id !== latest.id,
-    ),
-  ].filter(
-    (snapshot, index, rows) =>
-      new Date(snapshot.capturedAt).getTime() < latestAt &&
-      rows.findIndex((row) => row.id === snapshot.id) === index,
-  );
-  const baseline = nearestGrowthSnapshot(baselineCandidates, latestAt, rangeDays);
   const hasComparison = Boolean(baseline && baseline.id !== latest.id);
   const currentMembers = latest.allianceMembers;
   const hasFullRosterBaseline = Boolean(baseline?.allianceMembers?.length);
@@ -188,51 +185,16 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
     : approximate
       ? `Nearest available update · since ${new Date(baseline!.capturedAt).toLocaleString()}`
       : `Last ${rangeLabel}`;
-  const selectedMember = currentMembers.find(
-    (member) => member.uid === selectedUid,
-  );
+  const selectedMember = currentMembers.find((member) => member.uid === selectedUid)
+    ?? (selectedPlayer ? {
+      uid: selectedPlayer.uid ?? "",
+      name: selectedPlayer.name,
+      power: selectedPlayer.totalPower,
+    } : undefined);
   const selectedGrowth = memberGrowth.find(
     (item) => item.member.uid === selectedUid,
   );
-  const selectedHistory = selectedMember
-    ? snapshots
-        .map((snapshot) => {
-          const member =
-            snapshot.allianceMembers?.find(
-              (item) => item.uid === selectedMember.uid,
-            ) ??
-            snapshot.playerRanking.find(
-              (item) => item.uid === selectedMember.uid,
-            );
-          if (!member) return null;
-          const ranking = snapshot.playerRanking.find(
-            (item) => item.uid === selectedMember.uid,
-          );
-          return {
-            capturedAt: snapshot.capturedAt,
-            power: member.power,
-            rank: ranking?.rank ?? null,
-          };
-        })
-        .filter(
-          (
-            point,
-          ): point is { capturedAt: string; power: number; rank: number | null } =>
-            point != null,
-        )
-        .filter(
-          (point, index, rows) =>
-            rows.findIndex(
-              (row) =>
-                row.capturedAt === point.capturedAt && row.power === point.power,
-            ) === index,
-        )
-        .sort(
-          (a, b) =>
-            new Date(a.capturedAt).getTime() -
-            new Date(b.capturedAt).getTime(),
-        )
-    : [];
+  const selectedHistory = memberPowerHistory(snapshots, selectedMember?.uid);
   const GrowthList = ({
     title,
     rows,
@@ -289,6 +251,7 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
               <button
                 key={days}
                 className={rangeDays === days ? "active" : ""}
+                aria-pressed={rangeDays === days}
                 onClick={() => setRangeDays(days)}
               >
                 {days}D
@@ -325,7 +288,7 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
         </article>
         <article>
           <span>Tracked updates</span>
-          <strong>{available.length}</strong>
+          <strong>{allianceSnapshotCount}</strong>
           <small>Up to 30 cloud snapshots</small>
         </article>
       </div>
@@ -354,6 +317,23 @@ function AllianceGrowthPanel({ snapshots }: { snapshots: StateSnapshot[] }) {
   );
 }
 
+function memberPowerHistory(snapshots: StateSnapshot[], uid?: string) {
+  if (!uid) return [];
+  const points = new Map<string, { capturedAt: string; power: number; rank: number | null }>();
+  for (const snapshot of snapshots) {
+    const ranking = snapshot.playerRanking.find((item) => item.uid === uid);
+    const member = snapshot.allianceMembers?.find((item) => item.uid === uid) ?? ranking;
+    if (!member) continue;
+    const key = `${snapshot.capturedAt}-${member.power}`;
+    points.set(key, {
+      capturedAt: snapshot.capturedAt,
+      power: member.power,
+      rank: ranking?.rank ?? points.get(key)?.rank ?? null,
+    });
+  }
+  return [...points.values()].sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt));
+}
+
 function AllianceMemberHistory({
   member,
   points,
@@ -361,7 +341,7 @@ function AllianceMemberHistory({
   periodChange,
   periodGained,
 }: {
-  member: NonNullable<StateSnapshot["allianceMembers"]>[number];
+  member: { name: string; power: number };
   points: { capturedAt: string; power: number; rank: number | null }[];
   periodLabel: string;
   periodChange: number | null;
@@ -369,7 +349,7 @@ function AllianceMemberHistory({
 }) {
   const values = points.map((point) => point.power);
   const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
+  const maximum = values.length ? Math.max(...values) : member.power;
   const range = Math.max(1, maximum - minimum);
   const chartPoints = points
     .map((point, index) => {
@@ -381,7 +361,7 @@ function AllianceMemberHistory({
   const first = points[0];
   const last = points[points.length - 1];
   return (
-    <section className="alliance-member-history">
+    <section id="alliance-member-history" className="alliance-member-history">
       <header>
         <div>
           <p className="eyebrow"><History /> Member power history</p>
@@ -390,7 +370,7 @@ function AllianceMemberHistory({
         </div>
         <div className="alliance-history-metrics">
           <span>Current<strong>{formatPower(last?.power ?? member.power)}</strong></span>
-          <span>Peak<strong>{formatPower(maximum || member.power)}</strong></span>
+          <span>Peak<strong>{formatPower(maximum)}</strong></span>
           <span>Period gain<strong className={(periodGained ?? 0) >= 0 ? "positive" : "negative"}>{periodGained == null ? "—" : `${periodGained >= 0 ? "+" : ""}${formatPower(periodGained)}`}</strong></span>
           <span>Period change<strong><PowerChange value={periodChange} /></strong></span>
         </div>
@@ -407,7 +387,7 @@ function AllianceMemberHistory({
               return <circle key={`${point.capturedAt}-${point.power}`} cx={x} cy={y} r="4"><title>{`${new Date(point.capturedAt).toLocaleString()} · ${formatPower(point.power)}${point.rank ? ` · State rank #${point.rank}` : ""}`}</title></circle>;
             })}
           </svg>
-        ) : <div className="alliance-history-waiting">A second update will start this graph.</div>}
+        ) : <div className="alliance-history-waiting">Power history needs at least two saved updates.</div>}
         {first && last && <div className="alliance-history-dates"><span>{new Date(first.capturedAt).toLocaleString()}</span><span>{new Date(last.capturedAt).toLocaleString()}</span></div>}
       </div>
     </section>
@@ -436,6 +416,8 @@ export function AllianceHub({
   const [query, setQuery] = useState("");
   const [availability, setAvailability] = useState<"all" | Availability>("all");
   const [sort, setSort] = useState<"power" | "kills" | "name" | "hq">("power");
+  const [rangeDays, setRangeDays] = useState<GrowthRangeDays>(1);
+  const [selectedUid, setSelectedUid] = useState("");
   const [syncConnection, setSyncConnection] =
     useState<DarkWarConnection | null>(null);
   const [syncState, setSyncState] = useState<
@@ -780,16 +762,25 @@ export function AllianceHub({
     () => distinctPlayerStateSnapshots(snapshots),
     [snapshots],
   );
-  const fallbackComparisonSnapshot = useMemo(() => {
-    if (allianceSnapshots[1]) return allianceSnapshots[1];
-    const latestAllianceTime = allianceSnapshots[0]
-      ? new Date(allianceSnapshots[0].capturedAt).getTime()
-      : Number.POSITIVE_INFINITY;
-    return playerStateSnapshots.find(
-      (snapshot) =>
-        new Date(snapshot.capturedAt).getTime() < latestAllianceTime,
+  const latestAlliance = allianceSnapshots[0];
+  const comparisonSnapshot = useMemo(() => {
+    const latest = latestAlliance ?? playerStateSnapshots[0];
+    if (!latest) return undefined;
+    return nearestGrowthSnapshot(
+      [...allianceSnapshots.slice(1), ...playerStateSnapshots].filter((snapshot) => snapshot.id !== latest.id),
+      Date.parse(latest.capturedAt),
+      rangeDays,
     );
-  }, [allianceSnapshots, playerStateSnapshots]);
+  }, [allianceSnapshots, latestAlliance, playerStateSnapshots, rangeDays]);
+  const selectedPlayer = selectedUid
+    ? players.find((player) => (player.uid || player.id) === selectedUid)
+    : undefined;
+  const selectRosterPlayer = (player: Player) => {
+    setSelectedUid(player.uid || player.id);
+    window.requestAnimationFrame(() => {
+      document.getElementById("alliance-member-history")?.scrollIntoView({ block: "start" });
+    });
+  };
   const latestByUid = useMemo(
     () =>
       new Map(
@@ -803,12 +794,12 @@ export function AllianceHub({
   const previousByUid = useMemo(
     () =>
       new Map(
-        (fallbackComparisonSnapshot?.allianceMembers?.length
-          ? fallbackComparisonSnapshot.allianceMembers
-          : (fallbackComparisonSnapshot?.playerRanking ?? [])
+        (comparisonSnapshot?.allianceMembers?.length
+          ? comparisonSnapshot.allianceMembers
+          : (comparisonSnapshot?.playerRanking ?? [])
         ).map((row) => [row.uid, row]),
       ),
-    [fallbackComparisonSnapshot],
+    [comparisonSnapshot],
   );
   const latestStateByUid = useMemo(
     () =>
@@ -899,7 +890,23 @@ export function AllianceHub({
         </div>
       </section>
       <div className="alliance-grid">
-        <AllianceGrowthPanel snapshots={snapshots} />
+        {latestAlliance ? <AllianceGrowthPanel
+          snapshots={snapshots}
+          allianceSnapshotCount={allianceSnapshots.length}
+          latest={latestAlliance}
+          baseline={comparisonSnapshot}
+          rangeDays={rangeDays}
+          setRangeDays={setRangeDays}
+          selectedUid={selectedUid}
+          setSelectedUid={setSelectedUid}
+          selectedPlayer={selectedPlayer}
+        /> : selectedPlayer && <AllianceMemberHistory
+          member={{ name: selectedPlayer.name, power: selectedPlayer.totalPower }}
+          points={memberPowerHistory(snapshots, selectedPlayer.uid)}
+          periodLabel="Waiting for an Alliance update"
+          periodChange={powerChangeOf(selectedPlayer)}
+          periodGained={null}
+        />}
         <section className="alliance-card alliance-ranking">
           <header>
             <div>
@@ -970,7 +977,7 @@ export function AllianceHub({
             >
               Total kills
             </button>
-            <span>Change</span>
+            <span title={comparisonSnapshot ? `Compared with ${new Date(comparisonSnapshot.capturedAt).toLocaleString()}` : "No comparison update"}>Change ({rangeDays}D)</span>
             <span>Franky</span>
             <span />
           </div>
@@ -978,14 +985,26 @@ export function AllianceHub({
             {ranked.map((player, index) => {
               const kills = killsOf(player);
               return (
-                <article key={player.id}>
+                <article
+                  key={player.id}
+                  className={(player.uid || player.id) === selectedUid ? "history-selected" : ""}
+                  onClick={(event) => {
+                    if (!(event.target as Element).closest("button")) selectRosterPlayer(player);
+                  }}
+                >
                   <b>#{index + 1}</b>
                   <span>
-                    <strong className="alliance-player-name">
+                    <button
+                      type="button"
+                      className="alliance-player-name alliance-history-trigger"
+                      aria-label={`Show power history for ${player.name}`}
+                      aria-pressed={(player.uid || player.id) === selectedUid}
+                      onClick={() => selectRosterPlayer(player)}
+                    >
                       <AllianceRankBadge rank={playerAllianceRank(player)} />
                       <PlayerSexIcon sex={player.sex} />
                       {player.name}
-                    </strong>
+                    </button>
                     <small>
                       F1 {formatPower(player.formations[1].power)} · F2{" "}
                       {formatPower(player.formations[2].power)} · F3{" "}

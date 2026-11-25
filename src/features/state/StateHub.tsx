@@ -104,6 +104,7 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
     [sort, setSort] = useState<SortKey>("rank"),
     [direction, setDirection] = useState<"asc" | "desc">("asc"),
     [selectedUid, setSelectedUid] = useState("");
+  const [selectedAllianceUid, setSelectedAllianceUid] = useState("");
   const [profileUpdates, setProfileUpdates] = useState<Map<string, number>>(new Map());
   useEffect(() => {
     if (!showProfileUpdates) return;
@@ -179,13 +180,32 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
       [alliancePlayers],
     );
   useEffect(() => {
-    if (!latest?.playerRanking.length) return;
-    if (!latest.playerRanking.some((row) => row.uid === selectedUid))
-      setSelectedUid(latest.playerRanking[0].uid);
-  }, [latest, selectedUid]);
-  const selectedPlayer = latest?.playerRanking.find(
+    if (!latestPlayerSnapshot?.playerRanking.length) return;
+    if (!latestPlayerSnapshot.playerRanking.some((row) => row.uid === selectedUid))
+      setSelectedUid(latestPlayerSnapshot.playerRanking[0].uid);
+  }, [latestPlayerSnapshot, selectedUid]);
+  const selectedPlayer = latestPlayerSnapshot?.playerRanking.find(
     (row) => row.uid === selectedUid,
   );
+  const selectedAlliance = latestAllianceSnapshot?.allianceRanking.find(
+    (row) => row.uid === selectedAllianceUid,
+  ) ?? latestAllianceSnapshot?.allianceRanking[0];
+  const previousSelectedAlliance = previousAllianceSnapshot?.allianceRanking.find(
+    (row) => row.uid === selectedAlliance?.uid,
+  );
+  const selectedAllianceHistory = useMemo(
+    () => allianceSnapshots.flatMap((snapshot) => {
+      const row = snapshot.allianceRanking.find((alliance) => alliance.uid === selectedAlliance?.uid);
+      return row ? [{ capturedAt: snapshot.capturedAt, power: row.power, rank: row.rank }] : [];
+    }).reverse(),
+    [allianceSnapshots, selectedAlliance?.uid],
+  );
+  const selectAlliance = (uid: string) => {
+    setSelectedAllianceUid(uid);
+    window.requestAnimationFrame(() => {
+      document.getElementById("state-alliance-power-history")?.scrollIntoView({ block: "start" });
+    });
+  };
   const selectedHistory = useMemo(
     () =>
       playerSnapshots
@@ -374,7 +394,24 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
             </article>
           </section>
           {showHistory && mode === "players" && selectedPlayer && (
-            <PowerHistory player={selectedPlayer} points={selectedHistory} />
+            <PowerHistory
+              name={selectedPlayer.name}
+              tag={selectedPlayer.allianceTag}
+              power={selectedPlayer.power}
+              points={selectedHistory}
+            />
+          )}
+          {showHistory && mode === "alliances" && selectedAlliance && (
+            <PowerHistory
+              name={selectedAlliance.name}
+              tag={selectedAlliance.tag}
+              power={selectedAlliance.power}
+              points={selectedAllianceHistory}
+              allianceComparison={{
+                change: delta(selectedAlliance.power, previousSelectedAlliance?.power),
+                rankChange: previousSelectedAlliance ? previousSelectedAlliance.rank - selectedAlliance.rank : undefined,
+              }}
+            />
           )}
           <section className="state-card">
             <header>
@@ -419,6 +456,8 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
                 sort={sort}
                 direction={direction}
                 onSort={onSort}
+                selectedUid={showHistory ? selectedAlliance?.uid : undefined}
+                onSelect={showHistory ? selectAlliance : undefined}
               />
             )}
           </section>
@@ -429,15 +468,21 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
 }
 
 function PowerHistory({
-  player,
+  name,
+  tag,
+  power,
   points,
+  allianceComparison,
 }: {
-  player: StatePlayerRanking;
+  name: string;
+  tag: string;
+  power: number;
   points: { capturedAt: string; power: number; rank: number }[];
+  allianceComparison?: { change: number | null; rankChange?: number };
 }) {
   const values = points.map((point) => point.power);
   const minimum = Math.min(...values);
-  const maximum = Math.max(...values);
+  const maximum = values.length ? Math.max(...values) : power;
   const range = Math.max(1, maximum - minimum);
   const chartPoints = points
     .map((point, index) => {
@@ -449,32 +494,33 @@ function PowerHistory({
     .join(" ");
   const first = points[0];
   const last = points[points.length - 1];
-  const historyChange = last && first ? delta(last.power, first.power) : null;
+  const historyChange = last && first && points.length > 1 ? delta(last.power, first.power) : null;
+  const change = allianceComparison ? allianceComparison.change : historyChange;
   return (
-    <section className="state-history-card">
+    <section id={allianceComparison ? "state-alliance-power-history" : undefined} className="state-history-card">
       <header>
         <div>
           <p className="eyebrow">
-            <History /> Power history
+            <History /> {allianceComparison ? "Alliance power history" : "Power history"}
           </p>
           <h3>
-            [{player.allianceTag || "—"}] {player.name}
+            [{tag || "—"}] {name}
           </h3>
           <span>
-            {points.length} saved ranking snapshots · click another player below
+            {points.length} saved ranking snapshots · select {allianceComparison ? "an alliance" : "a player"} below
           </span>
         </div>
         <div className="state-history-metrics">
           <span>
-            Current<strong>{formatPower(last?.power ?? player.power)}</strong>
+            Current<strong>{formatPower(last?.power ?? power)}</strong>
           </span>
           <span>
-            Peak<strong>{formatPower(maximum || player.power)}</strong>
+            Peak<strong>{formatPower(maximum)}</strong>
           </span>
           <span>
-            Period change
+            {allianceComparison ? "Latest change" : "Period change"}
             <strong>
-              <Change value={historyChange} />
+              {change == null ? "—" : <Change value={change} rankChange={allianceComparison?.rankChange} />}
             </strong>
           </span>
         </div>
@@ -484,7 +530,7 @@ function PowerHistory({
           <svg
             viewBox="0 0 640 150"
             role="img"
-            aria-label={`${player.name} power history`}
+            aria-label={`${name} power history`}
           >
             <line x1="16" y1="22" x2="624" y2="22" />
             <line x1="16" y1="78" x2="624" y2="78" />
@@ -627,14 +673,18 @@ function AllianceRanking({
   sort,
   direction,
   onSort,
+  selectedUid,
+  onSelect,
 }: {
   rows: { row: StateAllianceRanking; before?: StateAllianceRanking }[];
   sort: SortKey;
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
+  selectedUid?: string;
+  onSelect?: (uid: string) => void;
 }) {
   return (
-    <div className="state-table">
+    <div className="state-table state-alliance-table">
       <div className="state-table-head">
         <SortButton
           label="Rank"
@@ -674,7 +724,20 @@ function AllianceRanking({
         <span>Change</span>
       </div>
       {rows.map(({ row, before }) => (
-        <article key={row.uid}>
+        <article
+          key={row.uid}
+          className={selectedUid === row.uid ? "selected" : ""}
+          role={onSelect ? "button" : undefined}
+          aria-pressed={onSelect ? selectedUid === row.uid : undefined}
+          tabIndex={onSelect ? 0 : undefined}
+          onClick={() => onSelect?.(row.uid)}
+          onKeyDown={(event) => {
+            if (onSelect && (event.key === "Enter" || event.key === " ")) {
+              event.preventDefault();
+              onSelect(row.uid);
+            }
+          }}
+        >
           <b>#{row.rank}</b>
           <span>
             <strong>

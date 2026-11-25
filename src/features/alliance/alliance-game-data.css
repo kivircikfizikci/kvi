@@ -20,6 +20,27 @@
 .alliance-ranking .ranking-list article {
   min-height: 68px;
   padding: 11px 14px;
+  cursor: pointer;
+}
+.alliance-ranking .ranking-list article.history-selected {
+  background: #182333;
+  box-shadow: inset 3px 0 var(--orange2);
+}
+.alliance-ranking .alliance-history-trigger {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font-size: .82rem;
+  font-weight: 700;
+}
+.alliance-ranking .alliance-history-trigger:hover {
+  color: var(--orange2);
+}
+.alliance-member-history {
+  scroll-margin-top: 9rem;
 }
 .alliance-ranking .ranking-list article > b {
   font-size: 0.76rem;

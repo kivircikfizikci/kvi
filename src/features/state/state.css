@@ -105,6 +105,9 @@
   grid-template-columns: repeat(3, minmax(105px, 1fr));
   gap: 8px;
 }
+#state-alliance-power-history {
+  scroll-margin-top: 9rem;
+}
 .state-history-metrics > span {
   min-width: 110px;
   padding: 9px 11px;
@@ -158,10 +161,12 @@
   color: var(--muted);
   font-size: 0.78rem;
 }
-.state-player-table article[role="button"] {
+.state-player-table article[role="button"],
+.state-alliance-table article[role="button"] {
   cursor: pointer;
 }
-.state-player-table article.selected {
+.state-player-table article.selected,
+.state-alliance-table article.selected {
   background: #17202c;
   box-shadow: inset 3px 0 var(--orange2);
 }
