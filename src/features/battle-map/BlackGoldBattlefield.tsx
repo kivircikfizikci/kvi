@@ -1,5 +1,6 @@
 import { Clock3, Crosshair, Download, Lock, MapPin, Pencil, Trash2, Unlock, UserPlus, Users, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { liveQuery } from 'dexie'
 import { Badge, Button, Input, Modal, NativeSelect } from '../../components/ui'
 import { db } from '../../db'
 import { usePlannerStore } from '../../store/usePlannerStore'
@@ -11,6 +12,7 @@ import {
   type BlackGoldPoint, unprojectBlackGold, validateBlackGoldPosition,
 } from './blackGoldGeometry'
 import { renderBlackGoldMap } from './blackGoldRenderer'
+import { blackGoldRosterIndex } from './blackGoldRoster'
 import {
   BGB_DEFAULT_TIMING, bgbPhases, blackGoldPlanAt, formatBgbMinute,
   generateBlackGoldOpening, replaceBlackGoldPlayer, reserveOptions, validateBgbTiming,
@@ -42,6 +44,7 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   const wrapRef = useRef<HTMLDivElement>(null)
   const drag = useRef<Drag | null>(null)
   const saveQueue = useRef(Promise.resolve())
+  const pendingTeams = useRef(new Map<BlackGoldTeamId, BlackGoldTeam>())
   const teamsRef = useRef<BlackGoldTeam[]>(createTeams())
   const [teams, setTeams] = useState(teamsRef.current)
   const [activeTeamId, setActiveTeamId] = useState<BlackGoldTeamId>('team-a')
@@ -57,21 +60,23 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   const [role, setRole] = useState<BlackGoldParticipantRole>('active')
   const [replacement, setReplacement] = useState<{ slotId: string; reserveId: string }>()
   const players = usePlannerStore(state => state.players)
-  const playerById = useMemo(() => new Map(players.map(player => [player.id, player])), [players])
+  const roster = useMemo(() => blackGoldRosterIndex(players), [players])
   const team = teams.find(item => item.id === activeTeamId)!
   const side = team.side ?? 'red'
   const teamColor = SIDE_COLORS[side]
   const otherTeam = teams.find(item => item.id !== activeTeamId)!
-  const identity = (id: string) => playerById.get(id)?.uid || id
-  const teamIds = new Set(team.participants.flatMap(item => item.playerId ? [identity(item.playerId)] : []))
-  const otherIds = new Set(otherTeam.participants.flatMap(item => item.playerId ? [identity(item.playerId)] : []))
+  const teamIds = roster.assignedKeys(team.participants)
+  const otherIds = roster.assignedKeys(otherTeam.participants)
   const hasOverlap = [...teamIds].some(id => otherIds.has(id))
-  const rosterOptions = players.filter(player => !teamIds.has(identity(player.id)) && !otherIds.has(identity(player.id)))
-    .sort((a, b) => b.totalPower - a.totalPower || a.name.localeCompare(b.name))
-  const nameOf = (item: BlackGoldParticipant) => (item.playerId && playerById.get(item.playerId)?.name) || item.name
-  const powerOf = (item: BlackGoldParticipant) => item.playerId ? playerById.get(item.playerId)?.totalPower : undefined
+  const rosterOptions = loaded ? players.filter(player => !teamIds.has(roster.playerKey(player)) && !otherIds.has(roster.playerKey(player)))
+    .sort((a, b) => b.totalPower - a.totalPower || a.name.localeCompare(b.name)) : []
+  const nameOf = (item: BlackGoldParticipant) => roster.resolve(item)?.name ?? item.name
+  const powerOf = (item: BlackGoldParticipant) => roster.resolve(item)?.totalPower
   const reserves = team.participants.filter(item => item.role === 'reserve')
-  const availableReserves = reserveOptions(team).filter(item => !item.playerId || !otherIds.has(identity(item.playerId)))
+  const availableReserves = reserveOptions(team).filter(item => {
+    const player = roster.resolve(item)
+    return !player || !otherIds.has(roster.playerKey(player))
+  })
   const hasSubstitutions = Boolean(team.substitutions?.length)
   const editableOpening = canEdit && loaded && !hasSubstitutions
   const plan = useMemo(() => blackGoldPlanAt(team, minute), [team, minute])
@@ -83,32 +88,26 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
     ...row.slot,
     x: preview?.id === row.slot.id ? preview.point.x : row.point?.x,
     y: preview?.id === row.slot.id ? preview.point.y : row.point?.y,
-    name: (row.occupant.playerId && playerById.get(row.occupant.playerId)?.name) || row.occupant.name,
-  })), [plan, playerById, preview])
+    name: roster.resolve(row.occupant)?.name ?? row.occupant.name,
+  })), [plan, roster, preview])
   const routes = plan.flatMap(row => row.route
     ? [{ ...row.route, color: row.slot.color || teamColor, highlighted: row.slot.id === selectedId }]
     : [])
   const placed = markers.filter(item => item.x !== undefined && item.y !== undefined)
 
   useEffect(() => {
-    let active = true
-    const load = async () => {
-      const records = await db.blackGoldTeams.toArray()
-      if (!active) return
-      teamsRef.current = createTeams().map(item => records.find(record => record.id === item.id) ?? item)
-      setTeams(teamsRef.current)
-      setLoaded(true)
-    }
-    const refresh = () => void load().catch(() => {
-      if (active) setMessage('Black Gold plans could not be loaded.')
+    const subscription = liveQuery(() => db.blackGoldTeams.toArray()).subscribe({
+      next(records) {
+        teamsRef.current = createTeams().map(item =>
+          pendingTeams.current.get(item.id) ?? records.find(record => record.id === item.id) ?? item,
+        )
+        setTeams(teamsRef.current)
+        setLoaded(true)
+      },
+      error() { setMessage('Black Gold plans could not be loaded.') },
     })
-    refresh()
-    if (!canEdit) window.addEventListener('planner-local-change', refresh)
-    return () => {
-      active = false
-      window.removeEventListener('planner-local-change', refresh)
-    }
-  }, [canEdit])
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     const node = wrapRef.current
@@ -165,6 +164,7 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
     try {
       const current = teamsRef.current.find(item => item.id === activeTeamId)!
       const updated = { ...update(current), updatedAt: now() }
+      pendingTeams.current.set(updated.id, updated)
       teamsRef.current = teamsRef.current.map(item => item.id === activeTeamId ? updated : item)
       setTeams(teamsRef.current)
       setMessage(undefined)
@@ -174,6 +174,9 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
           window.dispatchEvent(new Event('planner-local-change'))
         })
         .catch(() => setMessage('The change could not be saved.'))
+        .finally(() => {
+          if (pendingTeams.current.get(updated.id) === updated) pendingTeams.current.delete(updated.id)
+        })
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'The plan could not be updated.')
     }
@@ -196,10 +199,10 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
   }
 
   function addMember() {
-    const player = playerById.get(playerId)
+    const player = roster.byId.get(playerId)
     const nextRole = hasSubstitutions ? 'reserve' : role
     if (!player || (!editableOpening && nextRole === 'active')) return
-    if (otherIds.has(identity(playerId)) || teamIds.has(identity(playerId))) {
+    if (!rosterOptions.some(option => option.id === playerId)) {
       setMessage('This player is already assigned to a match team.')
       return
     }
@@ -383,14 +386,14 @@ export function BlackGoldBattlefield({ canEdit = true }: { canEdit?: boolean }) 
       {(message || hasOverlap) && <div className="map-message" role="status">{message ?? 'Resolve players listed on both teams before generating a plan.'}</div>}
       {canEdit && <section className="map-form bgb-add-form">
         <h3>Add participant <UserPlus /></h3>
-        <label>Alliance member<NativeSelect value={playerId} onChange={event => setPlayerId(event.target.value)}>
-          <option value="">Select alliance member</option>
+        <label>Available alliance member<NativeSelect disabled={!loaded || !rosterOptions.length} value={rosterOptions.some(player => player.id === playerId) ? playerId : ''} onChange={event => setPlayerId(event.target.value)}>
+          <option value="">{!loaded ? 'Loading rosters…' : rosterOptions.length ? 'Select unassigned member' : 'No unassigned members'}</option>
           {rosterOptions.map(player => <option key={player.id} value={player.id}>{player.name} ({formatPower(player.totalPower)})</option>)}
         </NativeSelect></label>
         <label>Roster<NativeSelect value={hasSubstitutions ? 'reserve' : role} disabled={hasSubstitutions} onChange={event => setRole(event.target.value as BlackGoldParticipantRole)}>
           <option value="active">Starter</option><option value="reserve">Reserve</option>
         </NativeSelect></label>
-        <Button disabled={!loaded || !playerId} onClick={addMember}><UserPlus />Add to {team.name}</Button>
+        <Button disabled={!rosterOptions.some(player => player.id === playerId)} onClick={addMember}><UserPlus />Add to {team.name}</Button>
       </section>}
       <section className="bgb-roster-section">
         <h3>Active roster <span>{plan.length}/{BGB_ACTIVE_LIMIT}</span></h3>

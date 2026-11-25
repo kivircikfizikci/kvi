@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-26",
+    title: "Black Gold roster availability",
+    summary: "Player selection hides starters and reserves already assigned to either match team.",
+  },
+  {
+    date: "2026-11-26",
     title: "Clearer Black Gold Battlefield maps",
     summary: "Movement arrows are thicker. Player labels fit around nearby markers and the selected player’s label takes priority.",
   },
