@@ -1,0 +1,69 @@
+.power-history-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.power-history-plot {
+  position: relative;
+  height: 148px;
+}
+
+.power-history-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.power-history-plot svg line {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.power-history-plot svg polyline {
+  fill: none;
+  stroke: var(--orange2);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.power-history-point {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--orange2);
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+.power-history-point span {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  white-space: nowrap;
+  font-size: .69rem;
+  font-weight: 700;
+}
+
+.power-history-axis {
+  display: grid;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+  text-align: center;
+  color: var(--muted);
+  font-size: .7rem;
+  white-space: nowrap;
+}
+
+.power-history-axis small {
+  display: block;
+  font-size: .65rem;
+}

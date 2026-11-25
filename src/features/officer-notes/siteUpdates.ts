@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-25",
+    title: "Power chart labels",
+    summary: "Power history charts show a value at every point and its date and time along the bottom.",
+  },
+  {
+    date: "2026-11-25",
     title: "Alliance growth and State power history",
     summary: "The Alliance roster follows the selected comparison period. Select a member in Alliance or an alliance in State to open its power history.",
   },

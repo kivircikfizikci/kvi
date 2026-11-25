@@ -18,6 +18,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Input, Modal, NativeSelect } from "../../components/ui";
 import { db } from "../../db";
+import { PowerHistoryChart } from "../../components/PowerHistoryChart";
 import {
   matchedGamePlayer,
   usePlannerStore,
@@ -347,19 +348,8 @@ function AllianceMemberHistory({
   periodChange: number | null;
   periodGained: number | null;
 }) {
-  const values = points.map((point) => point.power);
-  const minimum = Math.min(...values);
-  const maximum = values.length ? Math.max(...values) : member.power;
-  const range = Math.max(1, maximum - minimum);
-  const chartPoints = points
-    .map((point, index) => {
-      const x = points.length === 1 ? 320 : 16 + (index / (points.length - 1)) * 608;
-      const y = 134 - ((point.power - minimum) / range) * 112;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  const first = points[0];
   const last = points[points.length - 1];
+  const maximum = points.length ? Math.max(...points.map((point) => point.power)) : member.power;
   return (
     <section id="alliance-member-history" className="alliance-member-history">
       <header>
@@ -376,19 +366,8 @@ function AllianceMemberHistory({
         </div>
       </header>
       <div className="alliance-history-chart">
-        {points.length > 1 ? (
-          <svg viewBox="0 0 640 150" role="img" aria-label={`${member.name} power history`}>
-            <line x1="16" y1="22" x2="624" y2="22" />
-            <line x1="16" y1="78" x2="624" y2="78" />
-            <line x1="16" y1="134" x2="624" y2="134" />
-            <polyline points={chartPoints} />
-            {points.map((point, index) => {
-              const [x, y] = chartPoints.split(" ")[index].split(",");
-              return <circle key={`${point.capturedAt}-${point.power}`} cx={x} cy={y} r="4"><title>{`${new Date(point.capturedAt).toLocaleString()} · ${formatPower(point.power)}${point.rank ? ` · State rank #${point.rank}` : ""}`}</title></circle>;
-            })}
-          </svg>
-        ) : <div className="alliance-history-waiting">Power history needs at least two saved updates.</div>}
-        {first && last && <div className="alliance-history-dates"><span>{new Date(first.capturedAt).toLocaleString()}</span><span>{new Date(last.capturedAt).toLocaleString()}</span></div>}
+        <PowerHistoryChart name={member.name} points={points} />
+        {points.length < 2 && <p className="alliance-history-waiting">Power trends need at least two saved updates.</p>}
       </div>
     </section>
   );
