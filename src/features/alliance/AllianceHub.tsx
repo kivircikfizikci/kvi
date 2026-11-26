@@ -420,14 +420,11 @@ export function AllianceHub({
   const [syncMatches, setSyncMatches] = useState<
     Record<string, GameRosterMatch>
   >({});
-  const isProfileAlliance = (entry: GameRosterEntry) =>
-    Boolean(
-      (entry.uid && entry.allianceRank) ||
-      (profile.tag.trim() &&
-        entry.allianceTag &&
-        entry.allianceTag.trim().toLocaleLowerCase() ===
-          profile.tag.trim().toLocaleLowerCase()),
-    );
+  const isProfileAlliance = (entry: GameRosterEntry) => {
+    const profileTag = profile.tag.trim().toLowerCase();
+    const captureTag = entry.allianceTag?.trim().toLowerCase();
+    return profileTag && captureTag ? captureTag === profileTag : Boolean(entry.uid && entry.allianceRank);
+  };
   useEffect(() => {
     void db.allianceProfiles
       .get("primary")
@@ -509,7 +506,10 @@ export function AllianceHub({
     const previousMemberByUid = new Map(
       previousMembers.map((member) => [member.uid, member]),
     );
+    const isOlderRoster = previousAllianceSnapshot &&
+      Date.parse(result.capturedAt) < Date.parse(previousAllianceSnapshot.capturedAt);
     const reliableRoster =
+      !isOlderRoster &&
       previousMembers.length > 0 &&
       currentMembers.length >= previousMembers.length * 0.75;
     const previousPlayerState = snapshots.find(
@@ -518,6 +518,13 @@ export function AllianceHub({
     const previousAllianceState = snapshots.find(
       (snapshot) => snapshot.allianceRanking.length,
     );
+    const captureTime = Date.parse(result.capturedAt);
+    const previousPlayerKills = new Map(snapshots
+      .find(snapshot => Date.parse(snapshot.capturedAt) <= captureTime && snapshot.playerRanking.length)
+      ?.playerRanking.map(row => [row.uid, row.totalKills]));
+    const previousAllianceKills = new Map(snapshots
+      .find(snapshot => Date.parse(snapshot.capturedAt) <= captureTime && snapshot.allianceRanking.length)
+      ?.allianceRanking.map(row => [row.uid, row.totalKills]));
     const playerKills = new Map(
       (result.statePlayerKillRanking ?? []).map((row) => [
         row.uid,
@@ -550,7 +557,8 @@ export function AllianceHub({
       const current = statePatches.get(base.id) ?? structuredClone(base);
       statePatches.set(base.id, patch(current));
     };
-    if (playerKills.size && !capturedPlayerPower.length)
+    if (playerKills.size && !capturedPlayerPower.length && previousPlayerState &&
+      captureTime >= Date.parse(previousPlayerState.capturedAt))
       patchSnapshot(previousPlayerState, (snapshot) => ({
         ...snapshot,
         playerRanking: snapshot.playerRanking.map((row) => ({
@@ -558,7 +566,8 @@ export function AllianceHub({
           totalKills: playerKills.get(row.uid) ?? row.totalKills,
         })),
       }));
-    if (allianceKills.size && !capturedAlliancePower.length)
+    if (allianceKills.size && !capturedAlliancePower.length && previousAllianceState &&
+      captureTime >= Date.parse(previousAllianceState.capturedAt))
       patchSnapshot(previousAllianceState, (snapshot) => ({
         ...snapshot,
         allianceRanking: snapshot.allianceRanking.map((row) => ({
@@ -603,8 +612,8 @@ export function AllianceHub({
       ),
       ...newChanges,
     ].slice(-200);
-    setPendingRoster(hasRosterUpdate ? entries : []);
-    setPendingHasRosterUpdate(hasRosterUpdate);
+    setPendingRoster(hasRosterUpdate && !isOlderRoster ? entries : []);
+    setPendingHasRosterUpdate(hasRosterUpdate && !isOlderRoster);
     setPendingStatePatches([...statePatches.values()]);
     setPendingStateSnapshot(
       hasRosterUpdate || hasPowerUpdate
@@ -613,14 +622,14 @@ export function AllianceHub({
             capturedAt: result.capturedAt,
             playerRanking: capturedPlayerPower.map((row) => ({
               ...row,
-              totalKills: playerKills.get(row.uid) ?? row.totalKills,
+              totalKills: playerKills.get(row.uid) ?? row.totalKills ?? previousPlayerKills.get(row.uid),
             })),
             allianceRanking: capturedAlliancePower.map((row) => ({
               ...row,
-              totalKills: allianceKills.get(row.uid) ?? row.totalKills,
+              totalKills: allianceKills.get(row.uid) ?? row.totalKills ?? previousAllianceKills.get(row.uid),
             })),
             ...(hasRosterUpdate
-              ? { allianceMembers: currentMembers, membershipChanges }
+              ? { allianceMembers: currentMembers, membershipChanges: isOlderRoster ? [] : membershipChanges }
               : {}),
           }
         : undefined,
@@ -1299,8 +1308,9 @@ export function AllianceHub({
             </div>
           ) : (
             <div className="sync-review-empty">
-              No Alliance roster was included. Existing Alliance members will
-              not be changed.
+              {pendingStateSnapshot?.allianceMembers?.length
+                ? "This older Alliance roster will be saved to history."
+                : "No Alliance roster update in this capture."}
             </div>
           )}
           <div className="sync-review-actions">

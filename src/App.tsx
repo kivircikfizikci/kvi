@@ -111,6 +111,7 @@ export default function App() {
   const savePlayer = usePlannerStore((s) => s.savePlayer);
   const assign = usePlannerStore((s) => s.assign);
   const remove = usePlannerStore((s) => s.removeAssignment);
+  const moveParticipant = usePlannerStore((s) => s.moveParticipant);
   const reorder = usePlannerStore((s) => s.reorderRally);
   const updateRoundTime = usePlannerStore((s) => s.updateRoundTime);
   const [activeModule, setActiveModule] = useState<PlannerModuleId>(() =>
@@ -137,9 +138,6 @@ export default function App() {
   const exportRef = useRef<HTMLDivElement>(null);
   const localSnapshotRef = useRef<CloudSnapshot | null>(null);
   const revisionRef = useRef(0);
-  const cloudSaveTimer = useRef<number | undefined>(undefined);
-  const cloudSaveInFlight = useRef(false);
-  const cloudSavePending = useRef(false);
   const openModule = (id: PlannerModuleId) => {
     setActiveModule(id);
     window.history.replaceState({}, "", moduleUrl());
@@ -219,8 +217,20 @@ export default function App() {
             });
         }
       } catch (err) {
-        clearAuth(["kvi-cloud-token", "kvi-cloud-role", "kvi-cloud-label"]);
+        const status = (err as { status?: number } | null)?.status;
+        if (status === 401 || status === 403)
+          clearAuth(["kvi-cloud-token", "kvi-cloud-role", "kvi-cloud-label"]);
         setCloudCanEdit(false);
+        let hasData = false;
+        if (status === 401 || status === 403) {
+          try {
+            const publicState = await fetchPublicState();
+            await applyPublicState(publicState.stateSnapshots);
+            hasData = publicState.stateSnapshots.length > 0;
+          } catch {
+            // The original session error is shown below.
+          }
+        }
         if (live)
           setCloud((value) => ({
             ...value,
@@ -228,6 +238,7 @@ export default function App() {
             entered: false,
             role: "viewer",
             token: "",
+            hasData,
             error:
               err instanceof Error
                 ? err.message
@@ -241,18 +252,24 @@ export default function App() {
   }, [loaded, setCloudCanEdit]);
   useEffect(() => {
     if (!canEdit || !cloud.token) return;
+    let active = true;
+    let timer: number | undefined;
+    let saving = false;
+    let pending = false;
     const flushSave = async () => {
-      if (cloudSaveInFlight.current) return;
-      cloudSaveInFlight.current = true;
+      if (saving) return;
+      saving = true;
       try {
-        while (cloudSavePending.current) {
-          cloudSavePending.current = false;
-          const snapshot = await collectCloudSnapshot(),
-            result = await saveCloudState(
-              cloud.token,
-              snapshot,
-              revisionRef.current,
-            );
+        while (pending && active) {
+          pending = false;
+          const snapshot = await collectCloudSnapshot();
+          if (!active) return;
+          const result = await saveCloudState(
+            cloud.token,
+            snapshot,
+            revisionRef.current,
+          );
+          if (!active) return;
           revisionRef.current = result.revision;
           setCloud((value) => ({
             ...value,
@@ -262,27 +279,28 @@ export default function App() {
           }));
         }
       } catch (err) {
-        cloudSavePending.current = false;
+        if (!active) return;
+        pending = false;
         const message =
           err instanceof Error ? err.message : "Cloud save failed.";
         setCloud((value) => ({ ...value, error: message }));
         setError(message);
       } finally {
-        cloudSaveInFlight.current = false;
+        saving = false;
       }
     };
     const save = () => {
-      window.clearTimeout(cloudSaveTimer.current);
-      cloudSaveTimer.current = window.setTimeout(() => {
-        cloudSavePending.current = true;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        pending = true;
         void flushSave();
       }, 350);
     };
     window.addEventListener("planner-local-change", save);
     return () => {
+      active = false;
       window.removeEventListener("planner-local-change", save);
-      window.clearTimeout(cloudSaveTimer.current);
-      cloudSavePending.current = false;
+      window.clearTimeout(timer);
     };
   }, [canEdit, cloud.token, setError]);
   const login = async (uid: string, remember: boolean) => {
@@ -366,15 +384,31 @@ export default function App() {
     setCloudCanEdit(false);
     setCloud((value) => ({
       ...value,
+      loading: Boolean(value.token),
       entered: false,
       role: "viewer",
       label: "Visitor",
       token: "",
       error: null,
     }));
-    void fetchPublicState()
-      .then((result) => applyPublicState(result.stateSnapshots))
-      .catch(() => undefined);
+    if (!cloud.token) return;
+    void (async () => {
+      let hasData = false;
+      let error: string | null = null;
+      try {
+        const publicState = await fetchPublicState();
+        await applyPublicState(publicState.stateSnapshots);
+        hasData = publicState.stateSnapshots.length > 0;
+      } catch {
+        error = "Public State data could not be loaded.";
+        try {
+          await applyPublicState([]);
+        } catch {
+          error = "Public State data could not be loaded and the local cache could not be cleared.";
+        }
+      }
+      setCloud((value) => ({ ...value, loading: false, hasData, error }));
+    })();
   };
   const selectOfficerPlayer = (playerId: string) => {
     currentAuthStorage().setItem("kvi-officer-player-id", playerId);
@@ -414,7 +448,10 @@ export default function App() {
       return;
     }
     if (o?.type === "rally") {
-      if (a.sourceRally) remove(a.sourceRound, a.sourceRally, player.id);
+      if (a.sourceRally) {
+        moveParticipant(a.sourceRound, a.sourceRally, o.round, o.rallyId, player.id);
+        return;
+      }
       const formation =
         ([1, 2, 3, 4] as FormationId[])
           .filter((f) => player.formations[f].power != null)
@@ -423,9 +460,7 @@ export default function App() {
               (player.formations[y].power ?? 0) -
               (player.formations[x].power ?? 0),
           )[0] ?? 1;
-      const ok = assign(o.round, o.rallyId, player.id, formation, false);
-      if (!ok && a.sourceRally)
-        assign(a.sourceRound, a.sourceRally, player.id, formation, false);
+      assign(o.round, o.rallyId, player.id, formation, false);
     }
   };
   if (!loaded || cloud.loading)
@@ -683,7 +718,7 @@ export default function App() {
         ) : activeModule === "battle-map" ? (
           <BattleMap canEdit={canEdit} />
         ) : activeModule === "state" ? (
-          <StateHub showProfileUpdates={signedIn} />
+          <StateHub signedIn={signedIn} />
         ) : activeModule === "officer-notes" ? (
           <OfficerNotes
             canEdit={canEdit}

@@ -18,15 +18,34 @@ type Snapshot={players:Player[];plans:Plan[];activePlanId:string}
 export interface GameRosterEntry{name:string;power:number;totalKills?:number|null;rank:number;uid?:string;allianceRank?:AllianceRank;mainBuildingLevel?:number|null;sex?:0|1|2|null;allianceTag?:string;allianceName?:string;country?:string}
 export type GameRosterMatch='new'|'skip'|string
 export const normalizeGameName=(name:string)=>name.normalize('NFKC').replace(/[\u200B-\u200D\u2060\uFE0E\uFE0F\uFEFF]/gu,'').replace(/\s+/gu,' ').trim().toLocaleLowerCase('en-US')
-export const matchedGamePlayer=(players:Player[],name:string,gameUid?:string)=>{if(gameUid){const byUid=players.find(player=>player.uid===gameUid);if(byUid)return byUid}const normalized=normalizeGameName(name);return players.find(player=>normalizeGameName(player.name)===normalized||player.gameAliases?.some(alias=>normalizeGameName(alias)===normalized))}
+export function matchedGamePlayer(players: Player[], name: string, gameUid?: string) {
+  const byUid = gameUid ? players.find(player => player.uid === gameUid) : undefined;
+  if (byUid) return byUid;
+  const normalized = normalizeGameName(name);
+  return players.find(player =>
+    (!gameUid || !player.uid) &&
+    (normalizeGameName(player.name) === normalized ||
+      player.gameAliases?.some(alias => normalizeGameName(alias) === normalized)),
+  );
+}
 interface PlannerState { players:Player[];plans:Plan[];activePlanId:string;loaded:boolean;error:string|null;history:Snapshot[];future:Snapshot[];
   cloudCanEdit:boolean;initialize:()=>Promise<void>; hydrateCloud:(players:Player[],plans:Plan[],activePlanId:string)=>void;setCloudCanEdit:(value:boolean)=>void;setError:(v:string|null)=>void; savePlayer:(p:Player)=>void; deletePlayer:(id:string)=>void; archivePlayersByUid:(uids:string[])=>void; duplicatePlayer:(id:string)=>void; importPlayers:(p:Player[])=>void;syncGameRoster:(entries:GameRosterEntry[],matches?:Record<string,GameRosterMatch>)=>{added:number;updated:number;skipped:number;aliased:number};
   setActivePlan:(id:string)=>void; addPlan:()=>void; renamePlan:(id:string,name:string)=>void; duplicatePlan:(id:string)=>void; deletePlan:(id:string)=>void; importBundle:(p:Player[],plans:Plan[])=>void;
+  moveParticipant:(fromRound:RoundId,fromId:string,toRound:RoundId,toId:string,playerId:string,asLeader?:boolean)=>void;
   addRally:(round:RoundId)=>void; deleteRally:(round:RoundId,id:string)=>void; reorderRally:(round:RoundId,from:string,to:string)=>void; updateRoundTime:(round:RoundId,time:string)=>void; assign:(round:RoundId,rallyId:string,playerId:string,formation:FormationId,leader?:boolean)=>boolean; removeAssignment:(round:RoundId,rallyId:string,playerId:string)=>void; updateAssignment:(round:RoundId,rallyId:string,playerId:string,patch:Partial<Assignment>)=>void;
   optimize:(mode:OptimizationMode)=>void; resetPlan:()=>void; updateRules:(r:Partial<RuleConfig>)=>void; undo:()=>void;redo:()=>void;saveNow:()=>Promise<void> }
 let persistTimer:number|undefined
 let initializationInFlight=false
-const persist=(get:()=>PlannerState)=>{clearTimeout(persistTimer);persistTimer=window.setTimeout(()=>{const s=get();void Promise.all([replacePlayers(s.players),replacePlans(s.plans)]).then(()=>window.dispatchEvent(new Event('planner-local-change')))},180)}
+const persist = (get: () => PlannerState) => {
+  clearTimeout(persistTimer);
+  persistTimer = window.setTimeout(() => {
+    const state = get();
+    if (!state.cloudCanEdit) return;
+    void state.saveNow().catch(() => {
+      state.setError("Changes could not be saved to this browser.");
+    });
+  }, 180);
+};
 export const usePlannerStore=create<PlannerState>((set,get)=>{
  const snapshot=():Snapshot=>({players:structuredClone(get().players),plans:structuredClone(get().plans),activePlanId:get().activePlanId})
  const commit=(fn:(s:PlannerState)=>Partial<PlannerState>)=>{if(!get().cloudCanEdit){set({error:'Read-only mode. Sign in with an R4 or R5 User ID to make changes.'});return}const before=snapshot();set(s=>({...fn(s),history:[...s.history.slice(-29),before],future:[]}));persist(get)}
@@ -377,6 +396,27 @@ export const usePlannerStore=create<PlannerState>((set,get)=>{
      });
      return true;
    },
+   moveParticipant: (fromRound, fromId, toRound, toId, playerId, asLeader = false) => {
+     if (!get().cloudCanEdit || (!asLeader && fromRound === toRound && fromId === toId)) return;
+     const current = selectActivePlan(get());
+     if (!current) return;
+     const plan = structuredClone(current);
+     const source = plan.rounds[fromRound].find(rally => rally.id === fromId);
+     const assignment = source?.participants.find(member => member.playerId === playerId);
+     if (!source || !assignment || assignment.locked) return;
+     source.participants = source.participants.filter(member => member.playerId !== playerId);
+
+     const issue = validateAssignment(plan, get().players, toRound, toId, assignment, asLeader)
+       .find(item => item.severity === "error");
+     if (issue) {
+       set({ error: issue.message });
+       return;
+     }
+     const target = plan.rounds[toRound].find(rally => rally.id === toId)!;
+     if (asLeader) target.leader = assignment;
+     else target.participants.push(assignment);
+     updatePlan(() => plan);
+   },
    removeAssignment: (round, rallyId, playerId) =>
      updatePlan((p) => {
        const r = p.rounds[round].find((x) => x.id === rallyId);
@@ -426,10 +466,10 @@ export const usePlannerStore=create<PlannerState>((set,get)=>{
    },
    saveNow: async () => {
      if (!get().cloudCanEdit) return;
-     await Promise.all([
-       replacePlayers(get().players),
-       replacePlans(get().plans),
-     ]);
+     const { players, plans } = get();
+     await db.transaction("rw", db.players, db.plans, async () => {
+       await Promise.all([replacePlayers(players), replacePlans(plans)]);
+     });
      window.dispatchEvent(new Event("planner-local-change"));
    },
  };

@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-26",
+    title: "Planner reliability fixes",
+    summary: "Rally moves preserve formations, signed-in members can open State charts, and older Alliance captures are kept in history.",
+  },
+  {
+    date: "2026-11-26",
     title: "Mobile battle map zoom",
     summary: "Pinch to zoom on Game Map and Black Gold Battlefield. Pinching clears any pending player move.",
   },

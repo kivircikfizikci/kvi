@@ -4,8 +4,11 @@ An expandable, local-first planning and organization suite for Dark War: Surviva
 
 ## Modules
 
+- **Alliance** — alliance roster, growth comparisons and game-data imports.
+- **State** — public player and alliance rankings, with power charts for signed-in members.
 - **Rally Planner** — player roster, two-round Frankenstein rally planning, validation and optimization.
-- **Battle Map** — persistent coordinate planning for Capital Clash, including fixed objectives and player tower placement.
+- **Battle Map** — captured alliance positions on Game Map and timed Black Gold Battlefield plans for Team A and Team B.
+- **Officer Notes** — shared requests and site updates.
 
 New tools are registered in `src/app/moduleRegistry.ts`. Each feature owns its UI and domain logic under `src/features/<module>`, keeping the application shell independent from individual event mechanics.
 
@@ -16,7 +19,7 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite. Data is stored in the browser with IndexedDB.
+Open the URL printed by Vite. The app uses IndexedDB as a browser cache for the shared cloud workspace. R4 and R5 can edit shared data. R1 through R3 have read-only access, and visitors can open the public State rankings.
 
 ## Verify
 
@@ -31,4 +34,4 @@ Push the project to a GitHub repository using `main` as the default branch, then
 
 ## Data safety
 
-Use **Data tools → Export JSON** to create a complete backup. CSV export/import is available for roster editing. Formations, troop counts, availability, and rally capacity begin unknown and must be entered before optimization can use a player.
+Keep original game-data JSON captures so they can be imported again from **Alliance → Game data**. These files contain capture data. Back up the shared cloud workspace separately to preserve plans, notes, and map assignments.

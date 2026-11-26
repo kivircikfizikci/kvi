@@ -27,26 +27,6 @@ type SortKey =
 const delta = (current: number, previous?: number) =>
   previous && previous > 0 ? ((current - previous) / previous) * 100 : null;
 
-const distinctPowerSnapshots = <
-  T extends StatePlayerRanking | StateAllianceRanking,
->(
-  snapshots: StateSnapshot[],
-  rows: (snapshot: StateSnapshot) => T[],
-) => {
-  const fingerprints = new Set<string>();
-  return snapshots.filter((snapshot) => {
-    const ranking = rows(snapshot);
-    if (!ranking.length) return false;
-    const fingerprint = ranking
-      .map((row) => `${row.uid}:${row.rank}:${row.power}`)
-      .sort()
-      .join("|");
-    if (fingerprints.has(fingerprint)) return false;
-    fingerprints.add(fingerprint);
-    return true;
-  });
-};
-
 function Change({
   value,
   rankChange,
@@ -96,9 +76,10 @@ function SortButton({
   );
 }
 
-export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: boolean }) {
+export function StateHub({ signedIn = false }: { signedIn?: boolean }) {
   const alliancePlayers = usePlannerStore((state) => state.players);
-  const showHistory = usePlannerStore((state) => state.cloudCanEdit);
+  const showHistory = signedIn;
+  const showProfileUpdates = signedIn;
   const [snapshots, setSnapshots] = useState<StateSnapshot[]>([]),
     [mode, setMode] = useState<"players" | "alliances">("players"),
     [query, setQuery] = useState(""),
@@ -106,6 +87,7 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
     [direction, setDirection] = useState<"asc" | "desc">("asc"),
     [selectedUid, setSelectedUid] = useState("");
   const [selectedAllianceUid, setSelectedAllianceUid] = useState("");
+  const [rankingStatus, setRankingStatus] = useState<"loading" | "ready" | "error">("loading");
   const [profileUpdates, setProfileUpdates] = useState<Map<string, number>>(new Map());
   useEffect(() => {
     if (!showProfileUpdates) return;
@@ -125,28 +107,38 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
     };
   }, [showProfileUpdates]);
   useEffect(() => {
-    const load = () =>
-      void db.stateSnapshots
+    let active = true;
+    let request = 0;
+    const load = async () => {
+      const current = ++request;
+      try {
+        const latest = await db.stateSnapshots
         .orderBy("capturedAt")
         .reverse()
         .limit(30)
-        .toArray()
-        .then(setSnapshots);
-    load();
+        .toArray();
+        if (!active || request !== current) return;
+        setSnapshots(latest);
+        setRankingStatus("ready");
+      } catch {
+        if (active && request === current) setRankingStatus("error");
+      }
+    };
+    void load();
     window.addEventListener("planner-local-change", load);
-    return () => window.removeEventListener("planner-local-change", load);
+    return () => {
+      active = false;
+      window.removeEventListener("planner-local-change", load);
+    };
   }, []);
   const playerSnapshots = useMemo(
       () =>
-        distinctPowerSnapshots(snapshots, (snapshot) => snapshot.playerRanking),
+        snapshots.filter((snapshot) => snapshot.playerRanking.length),
       [snapshots],
     ),
     allianceSnapshots = useMemo(
       () =>
-        distinctPowerSnapshots(
-          snapshots,
-          (snapshot) => snapshot.allianceRanking,
-        ),
+        snapshots.filter((snapshot) => snapshot.allianceRanking.length),
       [snapshots],
     ),
     rankingSnapshots = useMemo(() => {
@@ -339,11 +331,10 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
           </div>
         )}
       </section>
-      {!latestPlayerSnapshot && !latestAllianceSnapshot ? (
+      {rankingStatus !== "ready" || (!latestPlayerSnapshot && !latestAllianceSnapshot) ? (
         <section className="state-empty">
           <Building2 />
-          <h3>No state snapshot yet</h3>
-          <p>Import a full Dark War game-data JSON from the Alliance tab.</p>
+          <h3>{rankingStatus === "loading" ? "Loading State rankings" : rankingStatus === "error" ? "State rankings could not be loaded" : "No State snapshot yet"}</h3>
         </section>
       ) : (
         <>
@@ -433,13 +424,18 @@ export function StateHub({ showProfileUpdates = false }: { showProfileUpdates?: 
               <div className="state-search">
                 <Search />
                 <Input
+                  aria-label="Search ranking"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search ranking"
                 />
               </div>
             </header>
-            {mode === "players" ? (
+            {!latest ? (
+              <p className="state-ranking-empty" role="status">This ranking has not been captured yet.</p>
+            ) : !(mode === "players" ? players.length : alliances.length) ? (
+              <p className="state-ranking-empty" role="status">No rankings match your search.</p>
+            ) : mode === "players" ? (
               <PlayerRanking
                 rows={players}
                 profileUpdates={showProfileUpdates ? profileUpdates : undefined}
@@ -593,10 +589,13 @@ function PlayerRanking({
             className={selectedUid === row.uid ? "selected" : ""}
             onClick={() => onSelect?.(row.uid)}
             role={onSelect ? "button" : undefined}
+            aria-pressed={onSelect ? selectedUid === row.uid : undefined}
             tabIndex={onSelect ? 0 : undefined}
             onKeyDown={(event) => {
-              if (onSelect && (event.key === "Enter" || event.key === " "))
+              if (onSelect && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
                 onSelect(row.uid);
+              }
             }}
           >
             <b>#{row.rank}</b>

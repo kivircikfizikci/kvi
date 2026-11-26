@@ -196,6 +196,12 @@
   font-size: 0.65rem;
   border-bottom: 1px solid var(--line);
 }
+.state-ranking-empty {
+  margin: 0;
+  padding: 24px 14px;
+  color: #a1adbd;
+  text-align: center;
+}
 .state-table article {
   padding: 10px 14px;
   border-bottom: 1px solid #202936;
