@@ -28,3 +28,7 @@
 .sync-alliance b,.sync-alliance small{display:block}.sync-alliance b{color:#d4dce8;font-size:.7rem}.sync-alliance small{color:#718096;white-space:nowrap;text-overflow:ellipsis;margin-top:2px;font-size:.58rem;overflow:hidden}
 .sync-review-actions{align-items:center;gap:8px;margin-top:14px;display:flex}.sync-review-actions>span{flex:1}
 @media (width<=720px){.sync-review-head{display:none}.sync-review-list>div{grid-template-columns:42px 1fr 82px}.sync-review-list>div>:last-child{grid-column:1/-1}.sync-review-actions{flex-wrap:wrap}.sync-review-actions>span{display:none}.alliance-ranking .ranking-list article{grid-template-columns:28px minmax(145px,1fr) 78px 58px}}
+.game-data-feedback {
+  padding: 12px 16px;
+  color: #b8dfc8;
+}

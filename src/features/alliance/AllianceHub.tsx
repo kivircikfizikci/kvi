@@ -406,6 +406,9 @@ export function AllianceHub({
     "Checking the local Dark War helper…",
   );
   const [syncReviewOpen, setSyncReviewOpen] = useState(false);
+  const [applyingGameData, setApplyingGameData] = useState(false);
+  const [applyError, setApplyError] = useState("");
+  const [applySummary, setApplySummary] = useState("");
   const [pendingRoster, setPendingRoster] = useState<GameRosterEntry[]>([]);
   const [pendingStateSnapshot, setPendingStateSnapshot] = useState<
     StateSnapshot | undefined
@@ -635,6 +638,8 @@ export function AllianceHub({
         : undefined,
     );
     setSyncMatches({});
+    setApplyError("");
+    setApplySummary("");
     onGameDataOpenChange(false);
     setSyncReviewOpen(true);
     setSyncState("ready");
@@ -677,6 +682,9 @@ export function AllianceHub({
     }
   };
   const applyGameSync = async () => {
+    if (applyingGameData) return;
+    setApplyingGameData(true);
+    setApplyError("");
     const selected = pendingRoster.filter(
       (entry) =>
         isProfileAlliance(entry) ||
@@ -689,19 +697,6 @@ export function AllianceHub({
     const currentUids = new Set(
       (pendingStateSnapshot?.allianceMembers ?? []).map((member) => member.uid),
     );
-    if (
-      pendingHasRosterUpdate &&
-      previousMembers.length > 0 &&
-      currentUids.size >= previousMembers.length * 0.75
-    )
-      archivePlayersByUid(
-        previousMembers
-          .filter((member) => !currentUids.has(member.uid))
-          .map((member) => member.uid),
-      );
-    const summary = pendingHasRosterUpdate
-      ? syncGameRoster(selected, syncMatches)
-      : { added: 0, updated: 0, skipped: 0, aliased: 0 };
     const snapshotsToSave = [
       ...pendingStatePatches,
       ...(pendingStateSnapshot ? [pendingStateSnapshot] : []),
@@ -732,15 +727,23 @@ export function AllianceHub({
           },
         });
       });
+      if (pendingHasRosterUpdate && previousMembers.length &&
+        currentUids.size >= previousMembers.length * 0.75) {
+        archivePlayersByUid(previousMembers.filter(member => !currentUids.has(member.uid)).map(member => member.uid));
+      }
+      const summary = pendingHasRosterUpdate
+        ? syncGameRoster(selected, syncMatches)
+        : { added: 0, updated: 0, aliased: 0 };
       window.dispatchEvent(new Event("planner-local-change"));
+      const message = `Game data applied · ${summary.added} members added · ${summary.updated} updated${summary.aliased ? ` · ${summary.aliased} renamed` : ""}${snapshotsToSave.length ? ` · ${snapshotsToSave.length} data update${snapshotsToSave.length === 1 ? "" : "s"} saved` : ""}.`;
+      setSyncMessage(message);
+      setApplySummary(message);
+      setSyncReviewOpen(false);
     } catch (error) {
-      setSyncMessage(error instanceof Error ? error.message : "Game data could not be saved.");
-      return;
+      setApplyError(error instanceof Error ? error.message : "Game data could not be saved.");
+    } finally {
+      setApplyingGameData(false);
     }
-    setSyncReviewOpen(false);
-    setSyncMessage(
-      `Sync complete · ${summary.added} added · ${summary.updated} members updated${summary.aliased ? ` · ${summary.aliased} renamed` : ""}${snapshotsToSave.length ? ` · ${snapshotsToSave.length} data update${snapshotsToSave.length === 1 ? "" : "s"} saved` : ""}.`,
-    );
   };
   const allianceSnapshots = useMemo(
     () => distinctAllianceSnapshots(snapshots),
@@ -877,6 +880,7 @@ export function AllianceHub({
           </p>
         </div>
       </section>
+      {applySummary && <p className="alliance-card game-data-feedback" role="status">{applySummary}</p>}
       <div className="alliance-grid">
         {latestAlliance ? <AllianceGrowthPanel
           snapshots={snapshots}
@@ -1200,7 +1204,7 @@ export function AllianceHub({
       </Modal>
       <Modal
         open={syncReviewOpen}
-        onOpenChange={setSyncReviewOpen}
+        onOpenChange={(open) => { if (!applyingGameData) setSyncReviewOpen(open); }}
         title="Review Game Data update"
         wide
       >
@@ -1313,15 +1317,19 @@ export function AllianceHub({
                 : "No Alliance roster update in this capture."}
             </div>
           )}
+          {applyError && <p className="access-error" role="alert">{applyError}</p>}
           <div className="sync-review-actions">
             <span />
             <Button
               variant="secondary"
+              disabled={applyingGameData}
               onClick={() => setSyncReviewOpen(false)}
             >
               Cancel
             </Button>
-            <Button onClick={() => void applyGameSync()}>Apply game update</Button>
+            <Button disabled={applyingGameData} onClick={() => void applyGameSync()}>
+              {applyingGameData ? "Applying game update…" : "Apply game update"}
+            </Button>
           </div>
         </div>
       </Modal>
