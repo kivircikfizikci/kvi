@@ -80,7 +80,7 @@ export interface MapTower {
   createdAt: string;
   updatedAt: string;
 }
-export type HiveLayout = "compact" | "cross" | "lanes" | "winged";
+export type HiveLayout = "compact" | "cross" | "lanes" | "winged" | "rings";
 export interface HivePlan {
   id: "primary";
   layout: HiveLayout;

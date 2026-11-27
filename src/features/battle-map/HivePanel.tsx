@@ -12,6 +12,7 @@ const layouts = [
   { value: 'cross', label: 'Cross', description: 'Four wings with corridors up to two tiles wide.' },
   { value: 'lanes', label: 'Access lanes', description: 'Lanes up to two tiles wide between pairs of shelter columns.' },
   { value: 'winged', label: 'Winged blocks', description: 'Four outer blocks with a packed center and side wings.' },
+  { value: 'rings', label: 'Concentric rings', description: 'Square rings around Frankenstein with two tiles between rings.' },
 ] as const
 
 export function HivePanel({ hive, focus }: {

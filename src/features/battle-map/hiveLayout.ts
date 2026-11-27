@@ -126,7 +126,23 @@ const wingedBlocks = [
   { columns: [458, 461, 464, 467, 470, 477, 480, 483, 486, 489], rows: [431, 428] },
 ]
 
+function ringCenters(chamber: MapPoint): MapPoint[] {
+  return [12, 22, 32, 42].flatMap(size => {
+    const perSide = Math.floor(size / 3)
+    const remainder = size % 3
+    // Keep both corner shelters flush with the perimeter. Any leftover tiles
+    // form a gap in the middle of the side, away from the corners.
+    const start = 3 - size / 2
+    const offsets = Array.from({ length: perSide }, (_, index) =>
+      start + index * 3 + (index >= Math.ceil(perSide / 2) ? remainder : 0))
+    const first = offsets[0], last = offsets[offsets.length - 1]
+    return offsets.flatMap(x => (x === first || x === last ? offsets : [first, last])
+      .map(y => ({ x: chamber.x + x, y: chamber.y + y })))
+  })
+}
+
 function layoutCenters({ layout, bounds, chamber }: HiveSettings): MapPoint[] {
+  if (layout === 'rings') return ringCenters(chamber)
   if (layout === 'winged') {
     return wingedBlocks.flatMap(({ columns, rows }) => columns.flatMap(x =>
       rows.map(y => ({ x: chamber.x + x - 472, y: chamber.y + y - 428 }))))
@@ -163,7 +179,7 @@ export function generateHive(settings: HiveSettings, players: readonly Player[],
     const dx = Math.abs(point.x - chamber.x - 1.5)
     const dy = Math.abs(point.y - chamber.y - 1.5)
     const distance = distanceFromChamber(point, chamber)
-    const shape = layout === 'compact' ? Math.max(dx, dy) : layout === 'cross' ? dx + dy : distance
+    const shape = layout === 'compact' || layout === 'rings' ? Math.max(dx, dy) : layout === 'cross' ? dx + dy : distance
     candidates.push({ ...point, shape, distance })
   }
   const pinnedIds = new Set(pinned.map(placement => placement.playerId))

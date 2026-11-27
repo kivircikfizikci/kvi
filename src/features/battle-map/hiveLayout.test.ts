@@ -30,7 +30,7 @@ function internalLandingPads(bounds: Rect, occupied: Rect[]) {
 }
 
 describe('Frankenstein hive planning', () => {
-  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged'])('fits 100 members in %s with the strongest nearest', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'rings'])('fits 100 members in %s with the strongest nearest', layout => {
     const settings = { ...DEFAULT_HIVE, layout }
     const { placements, unplaced, error } = generateHive(settings, roster)
     expect(error).toBeNull()
@@ -51,7 +51,7 @@ describe('Frankenstein hive planning', () => {
     }
   })
 
-  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'rings'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
     const settings = { ...DEFAULT_HIVE, layout, chamber: { x: 506, y: 417 } }
     for (const count of [24, 50, 78]) {
       const { placements } = generateHive(settings, roster.slice(0, count))
@@ -73,6 +73,19 @@ describe('Frankenstein hive planning', () => {
     expect(columnsAt(434)).toEqual([469, 472, 475, 478])
     expect(columnsAt(431)).toEqual([458, 461, 464, 467, 470, 477, 480, 483, 486, 489])
     expect(columnsAt(425)).toEqual([469, 472, 475, 478])
+  })
+
+  it('fills the inner rings first with two clear tiles between shelter footprints', () => {
+    const settings = { ...DEFAULT_HIVE, layout: 'rings' as const }
+    const rings = new Map<number, number>()
+    for (const slot of generateHive(settings, roster).placements) {
+      const radius = Math.max(Math.abs(slot.x - settings.chamber.x - 1.5), Math.abs(slot.y - settings.chamber.y - 1.5))
+      rings.set(radius, (rings.get(radius) ?? 0) + 1)
+    }
+    const filled = [...rings].sort(([a], [b]) => a - b)
+    expect(filled).toEqual([[4.5, 12], [9.5, 24], [14.5, 36], [19.5, 28]])
+    for (let i = 1; i < filled.length; i++)
+      expect(filled[i][0] - filled[i - 1][0] - 3).toBe(2)
   })
 
   it('opens a saved Stepped cross as Cross with its original pinned and generated coordinates', () => {
@@ -112,7 +125,7 @@ describe('Frankenstein hive planning', () => {
     const plan: HivePlan = { ...DEFAULT_HIVE, id: 'primary', placements: [], updatedAt: '' }
     const pinned = moveHiveShelter(plan, { playerId: roster[0].id, name: roster[0].name }, { x: 496, y: 417 }).placements
     expect(pinned).toEqual([{ playerId: roster[0].id, name: roster[0].name, x: 496, y: 417, manual: true }])
-    for (const layout of ['compact', 'cross', 'lanes', 'winged'] as const) {
+    for (const layout of ['compact', 'cross', 'lanes', 'winged', 'rings'] as const) {
       const result = generateHive({ ...DEFAULT_HIVE, layout }, roster, pinned)
       expect(result.error).toBeNull()
       expect(result.placements).toHaveLength(100)

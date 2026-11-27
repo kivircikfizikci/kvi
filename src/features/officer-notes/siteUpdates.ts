@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Concentric rings hive layout",
+    summary: "Place shelters in square rings around Frankenstein with a two-tile gap between rings.",
+  },
+  {
+    date: "2026-11-27",
     title: "Winged blocks hive layout",
     summary: "Winged blocks follows the reference grid. Saved stepped layouts open under Cross with their existing shelter positions.",
   },
