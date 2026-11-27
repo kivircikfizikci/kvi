@@ -31,7 +31,7 @@ import type {
   Player,
   StateSnapshot,
 } from "../../types";
-import { formatPower } from "../../utils/format";
+import { downloadFile, formatPower } from "../../utils/format";
 import {
   AllianceRankBadge,
   playerAllianceRank,
@@ -48,6 +48,7 @@ import {
   type DarkWarConnection,
   type DarkWarRosterResult,
 } from "./darkWarSync";
+import { parseVisibleGameCsv, visibleGameCsvHeader, VISIBLE_GAME_CSV } from "./visibleGameCsv";
 import "./alliance.css";
 import "./alliance-game-data.css";
 import "./dark-war-sync.css";
@@ -418,7 +419,7 @@ export function AllianceHub({
   >([]);
   const [pendingHasRosterUpdate, setPendingHasRosterUpdate] = useState(false);
   const [pendingObservations, setPendingObservations] = useState<Pick<
-    DarkWarRosterResult, "capturedAt" | "playerPositions" | "playerProfileUpdates"
+    DarkWarRosterResult, "capturedAt" | "playerPositions" | "playerProfileUpdates" | "source"
   > | null>(null);
   const [syncMatches, setSyncMatches] = useState<
     Record<string, GameRosterMatch>
@@ -488,7 +489,8 @@ export function AllianceHub({
   const reviewRoster = (result: DarkWarRosterResult) => {
     setPendingObservations(result);
     const entries = result.players;
-    const own = entries.filter(isProfileAlliance);
+    const manual = result.source === VISIBLE_GAME_CSV;
+    const own = manual ? entries : entries.filter(isProfileAlliance);
     const currentMembers = own
       .filter((entry) => entry.uid)
       .map((entry) => ({
@@ -512,6 +514,7 @@ export function AllianceHub({
     const isOlderRoster = previousAllianceSnapshot &&
       Date.parse(result.capturedAt) < Date.parse(previousAllianceSnapshot.capturedAt);
     const reliableRoster =
+      !manual &&
       !isOlderRoster &&
       previousMembers.length > 0 &&
       currentMembers.length >= previousMembers.length * 0.75;
@@ -548,6 +551,18 @@ export function AllianceHub({
       ? capturedState.allianceRanking
       : [];
     const hasRosterUpdate = currentMembers.length > 0;
+    const rosterHistory = manual ? new Map(previousMemberByUid) : currentByUid;
+    if (manual) {
+      for (const member of currentMembers) {
+        const before = previousMemberByUid.get(member.uid);
+        rosterHistory.set(member.uid, {
+          ...member,
+          level: member.level ?? before?.level ?? null,
+          totalKills: member.totalKills ?? before?.totalKills ?? null,
+          allianceRank: member.allianceRank ?? before?.allianceRank,
+        });
+      }
+    }
     const hasPowerUpdate = Boolean(
       capturedPlayerPower.length || capturedAlliancePower.length,
     );
@@ -632,7 +647,7 @@ export function AllianceHub({
               totalKills: allianceKills.get(row.uid) ?? row.totalKills ?? previousAllianceKills.get(row.uid),
             })),
             ...(hasRosterUpdate
-              ? { allianceMembers: currentMembers, membershipChanges: isOlderRoster ? [] : membershipChanges }
+              ? { allianceMembers: Array.from(rosterHistory.values()), membershipChanges: isOlderRoster ? [] : membershipChanges }
               : {}),
           }
         : undefined,
@@ -642,7 +657,7 @@ export function AllianceHub({
     setApplySummary("");
     onGameDataOpenChange(false);
     setSyncReviewOpen(true);
-    setSyncState("ready");
+    setSyncState(syncConnection ? "ready" : "disconnected");
     const exact = own.filter((entry) =>
       matchedGamePlayer(players, entry.name, entry.uid),
     ).length;
@@ -670,7 +685,10 @@ export function AllianceHub({
     const file = event.target.files?.[0];
     if (!file) return;
     try {
-      reviewRoster(parseSavedDarkWarRoster(await file.text()));
+      const content = await file.text();
+      reviewRoster(file.name.toLowerCase().endsWith(".csv")
+        ? parseVisibleGameCsv(content, players, snapshots)
+        : parseSavedDarkWarRoster(content));
     } catch (error) {
       setSyncMessage(
         error instanceof Error
@@ -682,12 +700,13 @@ export function AllianceHub({
     }
   };
   const applyGameSync = async () => {
-    if (applyingGameData) return;
+    if (!canEdit || applyingGameData) return;
     setApplyingGameData(true);
     setApplyError("");
+    const manual = pendingObservations?.source === VISIBLE_GAME_CSV;
     const selected = pendingRoster.filter(
       (entry) =>
-        isProfileAlliance(entry) ||
+        manual || isProfileAlliance(entry) ||
         (syncMatches[entry.uid ?? entry.name] &&
           syncMatches[entry.uid ?? entry.name] !== "skip"),
     );
@@ -727,7 +746,7 @@ export function AllianceHub({
           },
         });
       });
-      if (pendingHasRosterUpdate && previousMembers.length &&
+      if (!manual && pendingHasRosterUpdate && previousMembers.length &&
         currentUids.size >= previousMembers.length * 0.75) {
         archivePlayersByUid(previousMembers.filter(member => !currentUids.has(member.uid)).map(member => member.uid));
       }
@@ -1192,14 +1211,21 @@ export function AllianceHub({
           )}
           <label className="btn btn-secondary wide game-sync-file">
             <Upload />
-            Load one Game Data JSON
+            Load Game Data JSON or CSV
             <input
               type="file"
-              accept=".json,application/json"
+              accept=".json,.csv,application/json,text/csv"
               hidden
               onChange={(event) => void loadSavedRoster(event)}
             />
           </label>
+          <Button variant="secondary" className="wide" onClick={() => downloadFile("kvi-visible-game-data.csv", visibleGameCsvHeader + "\n", "text/csv;charset=utf-8")}>
+            <Download />Download CSV template
+          </Button>
+          <p className="helper">
+            Use member, state-player, or state-alliance in the type column. Blank UIDs are matched by exact name when unique.
+            Include the full State ranking you want to publish.
+          </p>
         </section>
       </Modal>
       <Modal
@@ -1217,7 +1243,7 @@ export function AllianceHub({
             {pendingHasRosterUpdate && (
               <>
                 <Badge tone="green">
-                  {pendingRoster.filter(isProfileAlliance).length} alliance
+                  {pendingRoster.filter(entry => pendingObservations?.source === VISIBLE_GAME_CSV || isProfileAlliance(entry)).length} alliance
                   members
                 </Badge>
                 <Badge tone="blue">
@@ -1256,7 +1282,7 @@ export function AllianceHub({
           {pendingHasRosterUpdate ? (
             <div className="sync-review-list">
               {pendingRoster.map((entry) => {
-                const own = isProfileAlliance(entry),
+                const own = pendingObservations?.source === VISIBLE_GAME_CSV || isProfileAlliance(entry),
                   automatic = own
                     ? matchedGamePlayer(players, entry.name, entry.uid)
                     : undefined,
@@ -1317,6 +1343,16 @@ export function AllianceHub({
                 : "No Alliance roster update in this capture."}
             </div>
           )}
+          {pendingObservations?.source === VISIBLE_GAME_CSV &&
+            Boolean(pendingStateSnapshot?.playerRanking.length || pendingStateSnapshot?.allianceRanking.length) &&
+            <p>Each State ranking included in this CSV becomes the latest list for that category.</p>}
+          {pendingObservations?.source === VISIBLE_GAME_CSV &&
+            [pendingStateSnapshot?.playerRanking, pendingStateSnapshot?.allianceRanking].map((rows, index) =>
+              rows?.length ? <details key={index}>
+                <summary>{index === 0 ? "Review State player rows" : "Review State alliance rows"}</summary>
+                <ol className="visible-game-csv-preview">{rows.map(row => <li key={row.uid}>#{row.rank} {row.name} · {formatPower(row.power)}</li>)}</ol>
+              </details> : null
+            )}
           {applyError && <p className="access-error" role="alert">{applyError}</p>}
           <div className="sync-review-actions">
             <span />

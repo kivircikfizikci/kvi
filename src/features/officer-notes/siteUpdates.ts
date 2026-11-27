@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Game data CSV import",
+    summary: "Import visible Alliance and State data from CSV and review the rows before publishing.",
+  },
+  {
+    date: "2026-11-27",
     title: "Hive power display",
     summary: "Use the Power button on the hive map to show or hide each member’s total power.",
   },

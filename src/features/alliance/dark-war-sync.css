@@ -32,3 +32,9 @@
   padding: 12px 16px;
   color: #b8dfc8;
 }
+.visible-game-csv-preview {
+  max-height: 230px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding-left: 16px;
+}
