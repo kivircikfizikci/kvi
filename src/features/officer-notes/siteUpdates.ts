@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Hive drag and undo",
+    summary: "Drag Frankenstein directly on the map and undo recent hive edits while the planner is open.",
+  },
+  {
+    date: "2026-11-27",
     title: "Hive map controls",
     summary: "Middle-drag pans the map during placement. Resize or move an existing hive area, and zoom in to see shelter names and coordinates.",
   },

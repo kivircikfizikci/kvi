@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react'
 import { db } from '../../db'
 import { usePlannerStore } from '../../store/usePlannerStore'
 import type { HiveLayout, HivePlan } from '../../types'
-import { DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, shelterBounds, transformHive, type HiveAreaChange, type HiveSettings } from './hiveLayout'
+import { chamberBounds, DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, shelterBounds, transformHive, type HiveAreaChange, type HiveSettings } from './hiveLayout'
 import { overlaps, type MapPoint, type Rect } from './mapGeometry'
 
 type Mode = 'pan' | 'area' | 'edit-area' | 'chamber' | 'shelter'
+type HiveUndo = { saved?: HivePlan; draft?: HiveSettings; expected?: string }
 
 export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   const roster = usePlannerStore(state => state.players)
@@ -17,9 +18,11 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   const [mode, setMode] = useState<Mode>('pan')
   const [selectedId, setSelectedId] = useState<string>()
   const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>()
+  const [history, setHistory] = useState<HiveUndo[]>([])
   const settings = draft ?? saved ?? DEFAULT_HIVE
   const placements = draft ? [] : saved?.placements ?? []
   const editable = canEdit && enabled && ready && !saving
+  const canUndo = editable && history.length > 0 && history.at(-1)?.expected === saved?.updatedAt
 
   useEffect(() => {
     if (!enabled) return
@@ -33,7 +36,15 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     return () => subscription.unsubscribe()
   }, [enabled])
 
+  function recordUndo(expected: string | undefined) {
+    setHistory(entries => {
+      const previous = entries.at(-1)?.expected === saved?.updatedAt ? entries.slice(-29) : []
+      return [...previous, { saved, draft, expected }]
+    })
+  }
+
   function changeSettings(next: HiveSettings, nextMode: Mode = 'pan') {
+    recordUndo(saved?.updatedAt)
     setDraft(next)
     setSelectedId(undefined)
     setMode(nextMode)
@@ -54,21 +65,54 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     return true
   }
 
+  async function writePlan(plan?: HivePlan) {
+    await db.transaction('rw', db.hivePlans, async () => {
+      const current = await db.hivePlans.get('primary')
+      if (current?.updatedAt !== saved?.updatedAt) throw new Error('The hive plan changed. Review it and try again.')
+      if (plan) await db.hivePlans.put(plan)
+      else await db.hivePlans.delete('primary')
+    })
+    setSaved(plan)
+    window.dispatchEvent(new Event('planner-local-change'))
+  }
+
   async function save(plan: HivePlan, message: string, nextMode: Mode = 'pan') {
     setSaving(true)
     try {
-      await db.transaction('rw', db.hivePlans, async () => {
-        const current = await db.hivePlans.get('primary')
-        if (current?.updatedAt !== saved?.updatedAt) throw new Error('The hive plan changed. Review it and try again.')
-        await db.hivePlans.put(plan)
-      })
-      setSaved(plan)
+      await writePlan(plan)
+      recordUndo(plan.updatedAt)
       setDraft(undefined)
       setMode(nextMode)
       setFeedback({ text: message })
-      window.dispatchEvent(new Event('planner-local-change'))
     } catch (error) {
       setFeedback({ text: error instanceof Error ? error.message : 'The hive plan could not be saved.', error: true })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function undo() {
+    const previous = history.at(-1)
+    if (!canUndo || !previous) return
+    setSaving(true)
+    try {
+      let restored = previous.saved
+      if (restored?.updatedAt !== saved?.updatedAt) {
+        if (restored) restored = { ...restored, updatedAt: new Date().toISOString() }
+        await writePlan(restored)
+      }
+      setDraft(previous.draft)
+      setHistory(entries => {
+        const remaining = entries.slice(0, -1)
+        const top = remaining.at(-1)
+        if (top) remaining[remaining.length - 1] = { ...top, expected: restored?.updatedAt }
+        return remaining
+      })
+      setMode('pan')
+      setSelectedId(undefined)
+      setFeedback({ text: 'Last hive change undone.' })
+    } catch (error) {
+      setFeedback({ text: error instanceof Error ? error.message : 'The hive change could not be undone.', error: true })
     } finally {
       setSaving(false)
     }
@@ -104,12 +148,26 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
       : `${result.placements.length} members placed by total power.`)
   }
 
+  function placeChamber(point: MapPoint) {
+    if (!editable || (point.x === settings.chamber.x && point.y === settings.chamber.y)) return
+    const next = { layout: settings.layout, bounds: settings.bounds, chamber: point }
+    const error = hiveSettingsError(next)
+    if (error) {
+      setFeedback({ text: error, error: true })
+      return
+    }
+    const occupied = placements.some(placement => overlaps(chamberBounds(point), shelterBounds(placement)))
+    if (saved && !draft && !occupied) {
+      void save({ ...saved, chamber: point, updatedAt: new Date().toISOString() }, 'Frankenstein moved.')
+      return
+    }
+    changeSettings(next)
+    if (occupied) setFeedback({ text: 'Frankenstein overlaps planned shelters. Generate & save to rearrange them.' })
+  }
+
   function chooseTile(point: MapPoint) {
-    if (mode === 'chamber' && editable) {
-      const next = { layout: settings.layout, bounds: settings.bounds, chamber: point }
-      const error = hiveSettingsError(next)
-      if (error) setFeedback({ text: error, error: true })
-      else changeSettings(next)
+    if (mode === 'chamber') {
+      placeChamber(point)
       return
     }
     if (mode === 'shelter' && editable && saved && !draft) {
@@ -129,9 +187,15 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
 
   return {
     roster, settings, placements, ready, canEdit, editable, mode, setMode, selectedId, setSelectedId, feedback,
-    selectLayout, selectArea, editArea, chooseTile, generate,
+    selectLayout, selectArea, editArea, chooseTile, placeChamber, generate, canUndo, undo,
     resetArea: () => { if (editable) changeSettings({ ...DEFAULT_HIVE, layout: settings.layout }) },
-    cancelDraft: () => { setDraft(undefined); setMode('pan'); setFeedback(undefined) },
+    cancelDraft: () => {
+      if (!editable || !draft) return
+      recordUndo(saved?.updatedAt)
+      setDraft(undefined)
+      setMode('pan')
+      setFeedback(undefined)
+    },
     hasDraft: Boolean(draft),
   }
 }

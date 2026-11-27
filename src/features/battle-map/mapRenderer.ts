@@ -7,7 +7,7 @@ interface RenderOptions {
   selectedId?: string | null
   pointer?: MapPoint | null
   exportMode?: boolean
-  hive?: { bounds: Rect; chamber: MapPoint; preview?: HiveAreaChange; editing?: boolean }
+  hive?: { bounds: Rect; chamber: MapPoint; preview?: HiveAreaChange; chamberPreview?: MapPoint; invalidChamber?: boolean; editing?: boolean }
 }
 const polygon=(ctx:CanvasRenderingContext2D,points:{x:number;y:number}[])=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath()}
 function area(ctx:CanvasRenderingContext2D,camera:Camera,w:number,h:number,minX:number,maxX:number,minY:number,maxY:number,fill:string,stroke:string){const points=[{x:minX-.5,y:minY-.5},{x:maxX+.5,y:minY-.5},{x:maxX+.5,y:maxY+.5},{x:minX-.5,y:maxY+.5}].map(p=>project(p,camera,w,h));polygon(ctx,points);ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke()}
@@ -19,10 +19,10 @@ export function drawPlayerMarker(ctx:CanvasRenderingContext2D,x:number,y:number,
 export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,camera:Camera,towers:MapTower[],options:RenderOptions={}){
   const offset = options.hive?.preview?.offset
   const visibleTowers = offset ? towers.map(t => ({ ...t, x: t.x + offset.x, y: t.y + offset.y })) : towers
-  const chamber = options.hive && {
+  const chamber = options.hive?.chamberPreview ?? (options.hive && {
     x: options.hive.chamber.x + (offset?.x ?? 0),
     y: options.hive.chamber.y + (offset?.y ?? 0),
-  }
+  })
   const gradient=ctx.createLinearGradient(0,0,0,h);gradient.addColorStop(0,'#2a2524');gradient.addColorStop(1,'#17191d');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h)
   polygon(ctx, SHIELD_ZONE_OUTLINE.map(point => project(point, camera, w, h)))
   ctx.fillStyle = 'rgba(164,173,182,.18)'
@@ -48,7 +48,9 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
     area(ctx, camera, w, h, box.minX, box.maxX, box.minY, box.maxY, 'rgba(231,177,95,.08)', 'rgba(252,193,108,.85)')
     ctx.restore()
     const reserved = chamberBounds(chamber)
-    area(ctx, camera, w, h, reserved.minX, reserved.maxX, reserved.minY, reserved.maxY, 'rgba(134,218,104,.24)', '#a6eb8e')
+    area(ctx, camera, w, h, reserved.minX, reserved.maxX, reserved.minY, reserved.maxY,
+      options.hive.invalidChamber ? 'rgba(240,102,93,.24)' : 'rgba(134,218,104,.24)',
+      options.hive.invalidChamber ? '#f48982' : '#a6eb8e')
     if (editing) drawHiveAreaHandles(ctx, camera, w, h, box)
   }
   for(const t of visibleTowers){area(ctx,camera,w,h,t.x-1,t.x+1,t.y-1,t.y+1,t.id===options.selectedId?'rgba(87,180,255,.3)':'rgba(74,146,210,.18)',t.id===options.selectedId?'#7dd3fc':t.color)}

@@ -1,4 +1,4 @@
-import { Box, MapPin, Move, RotateCcw, Scan, WandSparkles } from 'lucide-react'
+import { Box, MapPin, Move, RotateCcw, Scan, Undo2, WandSparkles } from 'lucide-react'
 import { Button, NativeSelect } from '../../components/ui'
 import type { HiveLayout } from '../../types'
 import { formatPower } from '../../utils/format'
@@ -47,7 +47,7 @@ export function HivePanel({ hive, focus, resetArea }: {
             <Move />Edit area
           </Button>
           <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'chamber'} onClick={() => hive.setMode(hive.mode === 'chamber' ? 'pan' : 'chamber')}>
-            <Box />Place Frankenstein
+            <Box />Move Frankenstein
           </Button>
           <Button variant="secondary" disabled={!hive.editable} onClick={resetArea}><RotateCcw />Armory 3 area</Button>
           {hive.selectedId && <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'shelter'}
@@ -56,11 +56,12 @@ export function HivePanel({ hive, focus, resetArea }: {
         {hive.mode !== 'pan' && <p className="hive-instruction" role="status">{
           hive.mode === 'area' ? 'Drag from one corner of the hive to the opposite corner on the map.' :
             hive.mode === 'edit-area' ? 'Drag inside the area to move it. Drag an edge or corner to resize.' :
-            hive.mode === 'chamber' ? 'Tap the southwest tile of the 4 × 4 chamber.' :
+            hive.mode === 'chamber' ? 'Drag Frankenstein, or tap the new southwest tile for the chamber.' :
               'Tap the center tile for the selected 3 × 3 shelter.'
         }</p>}
         <div className="hive-actions">
           <Button disabled={!hive.editable || !hive.roster.length} onClick={hive.generate}><WandSparkles />Generate & save</Button>
+          <Button variant="secondary" disabled={!hive.canUndo} onClick={() => void hive.undo()}><Undo2 />Undo</Button>
           {hive.hasDraft && <Button variant="secondary" disabled={!hive.editable} onClick={hive.cancelDraft}>Discard changes</Button>}
         </div>
       </>}

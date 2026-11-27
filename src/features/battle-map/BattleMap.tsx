@@ -9,7 +9,7 @@ import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import { useMapPinch, zoomMapBetween } from './useMapPinch'
 import { useHivePlanner } from './useHivePlanner'
 import { HivePanel } from './HivePanel'
-import { adjustHiveArea, boundsBetween, DEFAULT_HIVE, hiveAreaHandle, type HiveAreaChange, type HiveAreaHandle } from './hiveLayout'
+import { adjustHiveArea, boundsBetween, chamberBounds, DEFAULT_HIVE, hiveAreaHandle, hiveSettingsError, type HiveAreaChange, type HiveAreaHandle } from './hiveLayout'
 import './battle-map.css'
 import './hive-planner.css'
 
@@ -35,10 +35,11 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
   const drag = useRef<{
     x: number; y: number; pointerId: number; camera: Camera; start: MapPoint
     mode: ReturnType<typeof useHivePlanner>['mode']; navigationOnly: boolean
-    handle?: HiveAreaHandle
+    handle?: HiveAreaHandle; chamberOffset?: MapPoint
   } | null>(null)
   const fitted = useRef(false)
   const [preview, setPreview] = useState<HiveAreaChange>()
+  const [chamberPreview, setChamberPreview] = useState<MapPoint>()
   const [middlePan, setMiddlePan] = useState(false)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [camera, setCamera] = useState(defaultCamera)
@@ -128,9 +129,13 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     canvas.style.height = `${size.height}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     renderBattleMap(ctx, size.width, size.height, camera, visibleTowers, {
-      selectedId: selected, hive: hiveMode ? { bounds, chamber, preview, editing: hive.mode === 'edit-area' } : undefined,
+      selectedId: selected, hive: hiveMode ? {
+        bounds, chamber, preview, chamberPreview,
+        invalidChamber: Boolean(chamberPreview && hiveSettingsError({ ...hive.settings, chamber: chamberPreview })),
+        editing: hive.mode === 'edit-area',
+      } : undefined,
     })
-  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview, hive.mode])
+  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview, chamberPreview, hive.mode, hive.settings])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -159,6 +164,10 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     return adjustHiveArea(bounds, handle, { x: end.x - start.x, y: end.y - start.y })
   }
 
+  function chamberAtPointer(point: MapPoint, offset: MapPoint): MapPoint {
+    return { x: point.x - offset.x, y: point.y - offset.y }
+  }
+
   function startGesture(event: PointerEvent<HTMLCanvasElement>) {
     const middle = event.pointerType === 'mouse' && event.button === 1
     if (!middle && event.button !== 0) return
@@ -167,6 +176,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     if (pinch.start(event)) {
       drag.current = null
       setPreview(undefined)
+      setChamberPreview(undefined)
       return
     }
     const mode = hiveMode && !middle ? hive.mode : 'pan'
@@ -175,10 +185,14 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
       y: 11 / (TILE_HEIGHT * camera.zoom),
     }) : undefined
     const start = tile(event)
+    const chamberArea = chamberBounds(chamber)
+    const grabbedChamber = !middle && hive.editable && (mode === 'pan' || mode === 'chamber') &&
+      start.x >= chamberArea.minX && start.x <= chamberArea.maxX && start.y >= chamberArea.minY && start.y <= chamberArea.maxY
     const navigationOnly = middle || (mode === 'edit-area' && !handle)
     drag.current = {
       x: event.clientX, y: event.clientY, pointerId: event.pointerId,
       camera, start, mode: navigationOnly ? 'pan' : mode, navigationOnly, handle,
+      chamberOffset: grabbedChamber ? { x: start.x - chamber.x, y: start.y - chamber.y } : undefined,
     }
     if (middle) setMiddlePan(true)
     if (mode === 'area') setPreview({ bounds: boundsBetween(start, start) })
@@ -188,6 +202,10 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     if (pinch.move(event)) return
     const start = drag.current
     if (!start || start.pointerId !== event.pointerId) return
+    if (start.chamberOffset) {
+      setChamberPreview(chamberAtPointer(tile(event), start.chamberOffset))
+      return
+    }
     if (start.mode === 'area') {
       setPreview({ bounds: boundsBetween(start.start, tile(event)) })
       return
@@ -209,6 +227,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     if (drag.current?.pointerId === event.pointerId) {
       drag.current = null
       setPreview(undefined)
+      setChamberPreview(undefined)
       setMiddlePan(false)
     }
   }
@@ -219,10 +238,13 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     if (!start || start.pointerId !== event.pointerId) return
     drag.current = null
     setPreview(undefined)
+    setChamberPreview(undefined)
     setMiddlePan(false)
     if (!hiveMode || wasPinching || start.navigationOnly || event.button !== 0) return
     const point = tile(event)
-    if (start.mode === 'area') {
+    if (start.chamberOffset) {
+      hive.placeChamber(chamberAtPointer(point, start.chamberOffset))
+    } else if (start.mode === 'area') {
       const area = boundsBetween(start.start, point)
       if (hive.selectArea(area)) setCamera(fitHive(area, size.width, size.height))
     } else if (start.handle) {
@@ -299,7 +321,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
       </div>
       <div ref={wrapRef} className="map-canvas-wrap">
         <canvas ref={canvasRef} aria-label={hiveMode ? 'Hive plan map' : 'Game map'}
-          className={middlePan ? 'hive-middle-pan' : hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
+          className={middlePan || chamberPreview ? 'hive-middle-pan' : hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
           onPointerDown={startGesture}
           onMouseDown={event => { if (event.button === 1) event.preventDefault() }}
           onAuxClick={event => { if (event.button === 1) event.preventDefault() }}
