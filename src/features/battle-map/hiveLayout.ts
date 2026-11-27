@@ -1,9 +1,12 @@
-import type { HivePlan, Player } from '../../types'
+import type { HivePlan, Player, StoredHivePlan } from '../../types'
 import { MAX_PLAYERS } from '../players/constants'
 import { FIXED_BUILDINGS, MAP_MAX, MAP_MIN, fixedBuildingFootprint, overlaps, type MapPoint, type Rect } from './mapGeometry'
 
 export type HiveSettings = Pick<HivePlan, 'layout' | 'bounds' | 'chamber'>
 type Placement = HivePlan['placements'][number]
+export function normalizeHivePlan(plan: StoredHivePlan): HivePlan {
+  return { ...plan, layout: plan.layout === 'stepped-cross' ? 'cross' : plan.layout }
+}
 export const DEFAULT_HIVE: HiveSettings = {
   layout: 'compact',
   bounds: { minX: 490, maxX: 536, minY: 399, maxY: 445 },
@@ -122,23 +125,11 @@ const wingedBlocks = [
   { columns: [469, 472, 475, 478], rows: [445, 442, 437, 434, 425, 422, 417, 414] },
   { columns: [458, 461, 464, 467, 470, 477, 480, 483, 486, 489], rows: [431, 428] },
 ]
-const steppedRows = [7, 5, 5, 3, 3, 1, 1]
 
 function layoutCenters({ layout, bounds, chamber }: HiveSettings): MapPoint[] {
   if (layout === 'winged') {
     return wingedBlocks.flatMap(({ columns, rows }) => columns.flatMap(x =>
       rows.map(y => ({ x: chamber.x + x - 472, y: chamber.y + y - 428 }))))
-  }
-  if (layout === 'stepped-cross') {
-    const sides = [-1, 1] as const
-    return sides.flatMap(horizontal => sides.flatMap(vertical => {
-      const x = chamber.x + (horizontal < 0 ? -1 : 4)
-      const y = chamber.y + (vertical < 0 ? -1 : 4)
-      return steppedRows.flatMap((width, row) => Array.from({ length: width }, (_, column) => ({
-        x: x + horizontal * column * 3,
-        y: y + vertical * (row * 3 + (column === 0 ? 1 : 0)),
-      })))
-    }))
   }
   const columns = layout === 'cross' ? crossCenters(chamber.x, bounds.minX, bounds.maxX) :
     layout === 'lanes' ? laneCenters(chamber.x, bounds.minX, bounds.maxX) :

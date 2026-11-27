@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { db } from '../../db'
 import { usePlannerStore } from '../../store/usePlannerStore'
 import type { HiveLayout, HivePlan } from '../../types'
-import { chamberBounds, DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, shelterBounds, transformHive, type HiveAreaChange, type HiveSettings } from './hiveLayout'
+import { chamberBounds, DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, normalizeHivePlan, shelterBounds, transformHive, type HiveAreaChange, type HiveSettings } from './hiveLayout'
 import { overlaps, type MapPoint, type Rect } from './mapGeometry'
 
 type Mode = 'pan' | 'area' | 'edit-area' | 'chamber' | 'shelter'
@@ -29,7 +29,7 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     if (!enabled) return
     const subscription = liveQuery(() => db.hivePlans.get('primary')).subscribe({
       next(plan) {
-        setSaved(plan)
+        setSaved(plan && normalizeHivePlan(plan))
         setReady(true)
       },
       error() { setFeedback({ text: 'The shared hive plan could not be loaded.', error: true }) },

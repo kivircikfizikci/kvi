@@ -12,7 +12,6 @@ const layouts = [
   { value: 'cross', label: 'Cross', description: 'Four wings with corridors up to two tiles wide.' },
   { value: 'lanes', label: 'Access lanes', description: 'Lanes up to two tiles wide between pairs of shelter columns.' },
   { value: 'winged', label: 'Winged blocks', description: 'Four outer blocks with a packed center and side wings.' },
-  { value: 'stepped-cross', label: 'Stepped cross', description: 'Four stepped wings around a two-tile cross.' },
 ] as const
 
 export function HivePanel({ hive, focus }: {

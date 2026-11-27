@@ -1,10 +1,10 @@
 import { db } from '../db'
 import { usePlannerStore } from '../store/usePlannerStore'
-import type { AllianceProfile, BlackGoldTeam, HivePlan, MapTower, OfficerNote, Plan, Player, StateSnapshot } from '../types'
+import type { AllianceProfile, BlackGoldTeam, MapTower, OfficerNote, Plan, Player, StateSnapshot, StoredHivePlan } from '../types'
 
 export const CLOUD_API_URL='https://kvi-planner-cloud-api.graciousdrive32.chatgpt.site'
 export type CloudRole='viewer'|'member'|'r4'|'r5'
-export interface CloudSnapshot{version:1;players:Player[];plans:Plan[];activePlanId:string;mapTowers:MapTower[];blackGoldTeams?:BlackGoldTeam[];hivePlan?:HivePlan;allianceProfile:AllianceProfile|null;officerNotes:OfficerNote[];stateSnapshots:StateSnapshot[]}
+export interface CloudSnapshot{version:1;players:Player[];plans:Plan[];activePlanId:string;mapTowers:MapTower[];blackGoldTeams?:BlackGoldTeam[];hivePlan?:StoredHivePlan;allianceProfile:AllianceProfile|null;officerNotes:OfficerNote[];stateSnapshots:StateSnapshot[]}
 export interface CloudStateResponse{state:CloudSnapshot|null;revision:number;updatedAt:string|null}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

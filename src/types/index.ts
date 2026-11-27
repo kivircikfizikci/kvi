@@ -80,7 +80,7 @@ export interface MapTower {
   createdAt: string;
   updatedAt: string;
 }
-export type HiveLayout = "compact" | "cross" | "lanes" | "winged" | "stepped-cross";
+export type HiveLayout = "compact" | "cross" | "lanes" | "winged";
 export interface HivePlan {
   id: "primary";
   layout: HiveLayout;
@@ -90,6 +90,7 @@ export interface HivePlan {
   placements: { playerId: string; name: string; x: number; y: number; manual?: boolean }[];
   updatedAt: string;
 }
+export type StoredHivePlan = Omit<HivePlan, "layout"> & { layout: HiveLayout | "stepped-cross" };
 export type BlackGoldTeamId = "team-a" | "team-b";
 export type BlackGoldParticipantRole = "active" | "reserve";
 export interface BlackGoldParticipant {

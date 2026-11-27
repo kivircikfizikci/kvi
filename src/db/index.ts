@@ -1,12 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AllianceProfile, BlackGoldTeam, HivePlan, MapTower, OfficerNote, Plan, Player, StateSnapshot } from '../types'
+import type { AllianceProfile, BlackGoldTeam, MapTower, OfficerNote, Plan, Player, StateSnapshot, StoredHivePlan } from '../types'
 
 class PlannerDatabase extends Dexie {
   players!: EntityTable<Player, 'id'>
   plans!: EntityTable<Plan, 'id'>
   mapTowers!: EntityTable<MapTower, 'id'>
   blackGoldTeams!: EntityTable<BlackGoldTeam, 'id'>
-  hivePlans!: EntityTable<HivePlan, 'id'>
+  hivePlans!: EntityTable<StoredHivePlan, 'id'>
   allianceProfiles!: EntityTable<AllianceProfile, 'id'>
   officerNotes!: EntityTable<OfficerNote, 'id'>
   stateSnapshots!: EntityTable<StateSnapshot, 'id'>

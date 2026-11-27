@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { seedPlayers } from '../../db/seed'
 import type { HiveLayout, HivePlan } from '../../types'
-import { adjustHiveArea, chamberBounds, DEFAULT_HIVE, distanceFromChamber, generateHive, hiveAreaHandle, moveHiveShelter, shelterBounds, transformHive } from './hiveLayout'
+import { adjustHiveArea, chamberBounds, DEFAULT_HIVE, distanceFromChamber, generateHive, hiveAreaHandle, moveHiveShelter, normalizeHivePlan, shelterBounds, transformHive } from './hiveLayout'
 import { ARMORIES, fixedBuildingFootprint, overlaps, type Rect } from './mapGeometry'
 import { intersectsShieldZone, SHIELD_ZONE_OUTLINE } from './shieldZone'
 
@@ -30,7 +30,7 @@ function internalLandingPads(bounds: Rect, occupied: Rect[]) {
 }
 
 describe('Frankenstein hive planning', () => {
-  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'stepped-cross'])('fits 100 members in %s with the strongest nearest', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged'])('fits 100 members in %s with the strongest nearest', layout => {
     const settings = { ...DEFAULT_HIVE, layout }
     const { placements, unplaced, error } = generateHive(settings, roster)
     expect(error).toBeNull()
@@ -51,7 +51,7 @@ describe('Frankenstein hive planning', () => {
     }
   })
 
-  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'stepped-cross'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
     const settings = { ...DEFAULT_HIVE, layout, chamber: { x: 506, y: 417 } }
     for (const count of [24, 50, 78]) {
       const { placements } = generateHive(settings, roster.slice(0, count))
@@ -75,22 +75,15 @@ describe('Frankenstein hive planning', () => {
     expect(columnsAt(425)).toEqual([469, 472, 475, 478])
   })
 
-  it('gives each stepped cross quadrant 25 shelters in four tiers', () => {
-    const settings = { ...DEFAULT_HIVE, layout: 'stepped-cross' as const }
-    const { placements } = generateHive(settings, roster)
-    for (const horizontal of [-1, 1]) {
-      for (const vertical of [-1, 1]) {
-        const wing = placements.filter(slot =>
-          Math.sign(slot.x - settings.chamber.x - 1.5) === horizontal &&
-          Math.sign(slot.y - settings.chamber.y - 1.5) === vertical)
-        expect(wing).toHaveLength(25)
-      }
+  it('opens a saved Stepped cross as Cross with its original pinned and generated coordinates', () => {
+    const legacy = {
+      ...DEFAULT_HIVE, id: 'primary' as const, layout: 'stepped-cross' as const, updatedAt: '2026-11-27',
+      placements: [
+        { playerId: 'pinned', name: 'Pinned member', x: 496, y: 417, manual: true },
+        { playerId: 'generated', name: 'Generated member', x: 516, y: 425 },
+      ],
     }
-    const eastern = placements.filter(slot => slot.x >= settings.chamber.x + 4 && slot.y >= settings.chamber.y + 4)
-    for (const [row, width] of [7, 5, 5, 3, 3, 1, 1].entries()) {
-      const y = settings.chamber.y + 4 + row * 3
-      expect(eastern.filter(slot => slot.y === y || (slot.x === settings.chamber.x + 4 && slot.y === y + 1))).toHaveLength(width)
-    }
+    expect(normalizeHivePlan(legacy)).toEqual({ ...legacy, layout: 'cross' })
   })
 
   it('handles a full chamber with no room for shelters and rejects fixed-building overlap', () => {
@@ -119,7 +112,7 @@ describe('Frankenstein hive planning', () => {
     const plan: HivePlan = { ...DEFAULT_HIVE, id: 'primary', placements: [], updatedAt: '' }
     const pinned = moveHiveShelter(plan, { playerId: roster[0].id, name: roster[0].name }, { x: 496, y: 417 }).placements
     expect(pinned).toEqual([{ playerId: roster[0].id, name: roster[0].name, x: 496, y: 417, manual: true }])
-    for (const layout of ['compact', 'cross', 'lanes', 'winged', 'stepped-cross'] as const) {
+    for (const layout of ['compact', 'cross', 'lanes', 'winged'] as const) {
       const result = generateHive({ ...DEFAULT_HIVE, layout }, roster, pinned)
       expect(result.error).toBeNull()
       expect(result.placements).toHaveLength(100)
