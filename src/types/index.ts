@@ -80,6 +80,16 @@ export interface MapTower {
   createdAt: string;
   updatedAt: string;
 }
+export type HiveLayout = "compact" | "cross" | "lanes";
+export interface HivePlan {
+  id: "primary";
+  layout: HiveLayout;
+  bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /** Southwest tile of the 4×4 Frankenstein chamber. */
+  chamber: { x: number; y: number };
+  placements: { playerId: string; name: string; x: number; y: number }[];
+  updatedAt: string;
+}
 export type BlackGoldTeamId = "team-a" | "team-b";
 export type BlackGoldParticipantRole = "active" | "reserve";
 export interface BlackGoldParticipant {

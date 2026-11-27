@@ -54,7 +54,7 @@ export function towerAtScreenPoint(towers:MapTower[],sx:number,sy:number,camera:
 
 export interface Rect{minX:number;maxX:number;minY:number;maxY:number}
 const footprint=(x:number,y:number,size:number):Rect=>{const half=(size-1)/2;return{minX:x-half,maxX:x+half,minY:y-half,maxY:y+half}}
-const overlaps=(a:Rect,b:Rect)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY
+export const overlaps=(a:Rect,b:Rect)=>a.minX<=b.maxX&&a.maxX>=b.minX&&a.minY<=b.maxY&&a.maxY>=b.minY
 export function fixedBuildingFootprint(building:FixedBuilding):Rect{
   if(building.type==='turret')return{minX:building.x-1,maxX:building.x,minY:building.y-1,maxY:building.y}
   if(building.type==='armory')return footprint(building.x,building.y-2,building.size)

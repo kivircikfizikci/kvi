@@ -1,0 +1,61 @@
+.shield-zone-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  color: #aeb9c8;
+  font-size: .72rem;
+}
+.shield-zone-key i {
+  width: 12px;
+  height: 12px;
+  border: 1px solid #a3adb7;
+  background: #68717a;
+  border-radius: 2px;
+}
+.hive-controls {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  color: #adb9c9;
+  font-size: .75rem;
+}
+.hive-controls p,
+.hive-controls dl,
+.hive-controls dd {
+  margin: 0;
+}
+.hive-controls dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 10px;
+  align-items: baseline;
+}
+.hive-controls dt { color: #8593a8; }
+.hive-controls dd { font-variant-numeric: tabular-nums; }
+.hive-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hive-actions .btn { flex: 1 0 auto; }
+.hive-actions [aria-pressed='true'] {
+  color: #ffe1b4;
+  border-color: #b68547;
+  background: #322719;
+}
+.hive-instruction,
+.hive-warning {
+  padding: 8px;
+  border-radius: 4px;
+  background: #182a33;
+  color: #beeaff;
+}
+.hive-warning { background: #322719; color: #ffd7a1; }
+.hive-roster button i { background: #67c5ea; }
+.hive-targeting { cursor: crosshair; }
+@media (width <= 900px) {
+  .hive-shell .hive-roster { max-height: 170px; overflow: auto; }
+  .hive-shell .map-stage { min-height: 380px; height: 62svh; }
+}
+@media (width <= 520px) {
+  .battlefield-switch { flex-wrap: wrap; }
+}

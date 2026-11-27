@@ -1,7 +1,14 @@
 import type { MapTower } from '../../types'
-import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, clampCoordinate, fixedBuildingFootprint, gridStepForZoom, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
+import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, type MapPoint, type Rect, clampCoordinate, fixedBuildingFootprint, gridStepForZoom, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
+import { chamberBounds } from './hiveLayout'
+import { SHIELD_ZONE_OUTLINE } from './shieldZone'
 
-interface RenderOptions { selectedId?:string|null; pointer?:{x:number;y:number}|null; exportMode?:boolean }
+interface RenderOptions {
+  selectedId?: string | null
+  pointer?: MapPoint | null
+  exportMode?: boolean
+  hive?: { bounds: Rect; chamber: MapPoint; preview?: Rect }
+}
 const polygon=(ctx:CanvasRenderingContext2D,points:{x:number;y:number}[])=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath()}
 function area(ctx:CanvasRenderingContext2D,camera:Camera,w:number,h:number,minX:number,maxX:number,minY:number,maxY:number,fill:string,stroke:string){const points=[{x:minX-.5,y:minY-.5},{x:maxX+.5,y:minY-.5},{x:maxX+.5,y:maxY+.5},{x:minX-.5,y:maxY+.5}].map(p=>project(p,camera,w,h));polygon(ctx,points);ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke()}
 export function drawMapLabel(ctx:CanvasRenderingContext2D,x:number,y:number,title:string,subtitle:string,accent:string){ctx.save();ctx.font='700 13px Inter, system-ui, sans-serif';const width=Math.max(ctx.measureText(title).width,ctx.measureText(subtitle).width)+22;const left=x-width/2,top=y;ctx.fillStyle='rgba(8,12,18,.9)';ctx.strokeStyle=accent;ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(left,top,width,40,6);ctx.fill();ctx.stroke();ctx.textAlign='center';ctx.fillStyle='#f3f6fb';ctx.fillText(title,x,top+16);ctx.font='11px Inter, system-ui, sans-serif';ctx.fillStyle='#9daabc';ctx.fillText(subtitle,x,top+31);ctx.restore()}
@@ -11,6 +18,12 @@ export function drawPlayerMarker(ctx:CanvasRenderingContext2D,x:number,y:number,
 
 export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,camera:Camera,towers:MapTower[],options:RenderOptions={}){
   const gradient=ctx.createLinearGradient(0,0,0,h);gradient.addColorStop(0,'#2a2524');gradient.addColorStop(1,'#17191d');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h)
+  polygon(ctx, SHIELD_ZONE_OUTLINE.map(point => project(point, camera, w, h)))
+  ctx.fillStyle = 'rgba(164,173,182,.18)'
+  ctx.strokeStyle = 'rgba(195,204,213,.62)'
+  ctx.lineWidth = 1.5
+  ctx.fill()
+  ctx.stroke()
   const corners=[unproject(0,0,camera,w,h),unproject(w,0,camera,w,h),unproject(w,h,camera,w,h),unproject(0,h,camera,w,h)]
   const minX=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.x))-3)),maxX=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.x))+3)),minY=Math.max(0,Math.floor(Math.min(...corners.map(p=>p.y))-3)),maxY=Math.min(MAP_MAX,Math.ceil(Math.max(...corners.map(p=>p.y))+3))
   const step=gridStepForZoom(camera.zoom)
@@ -21,14 +34,56 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   area(ctx,camera,w,h,CAPITAL_BLOCKED.minX,CAPITAL_BLOCKED.maxX,CAPITAL_BLOCKED.minY,CAPITAL_BLOCKED.maxY,'rgba(187,63,63,.18)','rgba(255,100,100,.65)')
   for(const b of ARMORIES){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(74,112,146,.14)','rgba(103,167,221,.34)')}
   for(const b of TURRETS){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(182,118,54,.18)','rgba(246,171,88,.5)')}
+  if (options.hive) {
+    const { bounds, chamber, preview } = options.hive
+    ctx.save()
+    ctx.setLineDash([6, 4])
+    const box = preview ?? bounds
+    area(ctx, camera, w, h, box.minX, box.maxX, box.minY, box.maxY, 'rgba(231,177,95,.08)', 'rgba(252,193,108,.85)')
+    ctx.restore()
+    const reserved = chamberBounds(chamber)
+    area(ctx, camera, w, h, reserved.minX, reserved.maxX, reserved.minY, reserved.maxY, 'rgba(134,218,104,.24)', '#a6eb8e')
+  }
   for(const t of towers){area(ctx,camera,w,h,t.x-1,t.x+1,t.y-1,t.y+1,t.id===options.selectedId?'rgba(87,180,255,.3)':'rgba(74,146,210,.18)',t.id===options.selectedId?'#7dd3fc':t.color)}
   const scale=Math.max(.72,Math.min(1.35,camera.zoom*5))
   const fixed=[...ARMORIES,...TURRETS,CAPITAL].sort((a,b)=>b.y-a.y||a.x-b.x)
   for(const b of fixed){const footprint=b.type==='turret'?fixedBuildingFootprint(b):null,point=footprint?{x:(footprint.minX+footprint.maxX)/2,y:(footprint.minY+footprint.maxY)/2}:b,p=project(point,camera,w,h),color=b.type==='capital'?'#d9a52e':b.type==='turret'?'#b76b2d':'#5e7f99';marker(ctx,p.x,p.y,b.type,color,scale);if(b.type!=='turret'&&(camera.zoom>=.045||options.exportMode))drawMapLabel(ctx,p.x,p.y+30*scale,b.name,`X:${b.x}  Y:${b.y}`,color)}
   const sortedTowers=[...towers].sort((a,b)=>b.y-a.y||a.x-b.x),showPlayerDetails=camera.zoom>=.12||Boolean(options.exportMode)
-  for(const t of sortedTowers){const p=project(t,camera,w,h);drawPlayerMarker(ctx,p.x,p.y,t.color,scale,showPlayerDetails)}
+  for(const t of sortedTowers){
+    const p=project(t,camera,w,h)
+    const markerScale = options.hive ? Math.min(scale, camera.zoom * 5.5) : scale
+    drawPlayerMarker(ctx,p.x,p.y,t.id===options.selectedId?'#bceaff':t.color,markerScale,showPlayerDetails)
+  }
+  if (options.hive) {
+    const { x, y } = options.hive.chamber
+    const point = project({ x: x + 1.5, y: y + 1.5 }, camera, w, h)
+    drawHiveChamber(ctx, point, Math.min(19, 53 * camera.zoom))
+    if (camera.zoom >= .045 || options.exportMode)
+      singleLabel(ctx, point.x, point.y - 27, 'Frankenstein · 4 × 4', '#a6eb8e')
+  }
   if(options.pointer&&camera.zoom>=.2){const p={x:clampCoordinate(options.pointer.x),y:clampCoordinate(options.pointer.y)},s=project(p,camera,w,h),rx=(TILE_WIDTH/2)*camera.zoom,ry=(TILE_HEIGHT/2)*camera.zoom;ctx.strokeStyle='#f5a55a';ctx.lineWidth=2;ctx.strokeRect(s.x-rx,s.y-ry,rx*2,ry*2);ctx.fillStyle='#f6c48e';ctx.font='12px Inter, system-ui';ctx.fillText(`X:${p.x} Y:${p.y}`,s.x+10,s.y-10)}
   ctx.fillStyle='rgba(7,10,15,.78)';ctx.fillRect(12,h-38,255,26);ctx.fillStyle='#c5cfdd';ctx.font='12px Inter, system-ui';ctx.fillText(`Center X:${Math.round(camera.x)} Y:${Math.round(camera.y)}  ·  ${Math.round(camera.zoom*100)}%`,22,h-21)
   if(camera.zoom>=.045||options.exportMode)for(const turret of TURRETS){const footprint=fixedBuildingFootprint(turret),p=project({x:(footprint.minX+footprint.maxX)/2,y:(footprint.minY+footprint.maxY)/2},camera,w,h);singleLabel(ctx,p.x,p.y,turret.name,'#b76b2d')}
-  if(showPlayerDetails)for(const t of sortedTowers){const p=project(t,camera,w,h);drawMapLabel(ctx,p.x,p.y-31,t.name,`X:${t.x}  Y:${t.y}`,t.color)}
+  for (const t of sortedTowers) {
+    if (options.hive ? t.id !== options.selectedId : !showPlayerDetails) continue
+    const p = project(t, camera, w, h)
+    drawMapLabel(ctx, p.x, p.y - (options.hive ? 43 : 31), t.name, `X:${t.x}  Y:${t.y}`, t.color)
+  }
+}
+
+function drawHiveChamber(ctx: CanvasRenderingContext2D, point: MapPoint, radius: number) {
+  ctx.save()
+  ctx.translate(point.x, point.y)
+  ctx.fillStyle = '#22392e'
+  ctx.strokeStyle = '#9ddc83'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.roundRect(-radius, -.85 * radius, radius * 2, radius * 1.7, radius * .3)
+  ctx.fill()
+  ctx.stroke()
+  ctx.fillStyle = '#acf672'
+  ctx.beginPath()
+  ctx.ellipse(0, 0, radius * .48, radius * .62, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
 }

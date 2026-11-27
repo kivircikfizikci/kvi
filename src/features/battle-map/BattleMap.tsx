@@ -1,32 +1,61 @@
 import { Crosshair, Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react'
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Button } from '../../components/ui'
 import { db } from '../../db'
 import type { MapTower } from '../../types'
-import { exportCamera, TILE_HEIGHT, TILE_WIDTH, type Camera } from './mapGeometry'
+import { clampCoordinate, exportCamera, TILE_HEIGHT, TILE_WIDTH, unproject, type Camera, type MapPoint, type Rect } from './mapGeometry'
 import { renderBattleMap } from './mapRenderer'
 import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import { useMapPinch, zoomMapBetween } from './useMapPinch'
+import { useHivePlanner } from './useHivePlanner'
+import { HivePanel } from './HivePanel'
+import { boundsBetween, DEFAULT_HIVE } from './hiveLayout'
 import './battle-map.css'
+import './hive-planner.css'
 
 const defaultCamera: Camera = { x: 501.5, y: 499.5, zoom: .075 }
 const clampCenter = (value: number) => Math.max(0, Math.min(999, value))
 const clampZoom = (value: number) => Math.max(.008, Math.min(1, value))
 const zoomLimits = { tileX: TILE_WIDTH, tileY: -TILE_HEIGHT, clampCenter, clampZoom }
 
-function GameMap() {
+function fitHive(bounds: Rect, width: number, height: number): Camera {
+  return {
+    x: (bounds.minX + bounds.maxX) / 2,
+    y: (bounds.minY + bounds.maxY) / 2,
+    zoom: clampZoom(Math.min(
+      width * .88 / ((bounds.maxX - bounds.minX + 1) * TILE_WIDTH),
+      height * .85 / ((bounds.maxY - bounds.minY + 1) * TILE_HEIGHT),
+    )),
+  }
+}
+
+function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; y: number; camera: Camera } | null>(null)
-  const [size, setSize] = useState({ width: 1000, height: 700 })
+  const drag = useRef<{ x: number; y: number; camera: Camera; start: MapPoint; mode: ReturnType<typeof useHivePlanner>['mode'] } | null>(null)
+  const fitted = useRef(false)
+  const [preview, setPreview] = useState<Rect>()
+  const [size, setSize] = useState({ width: 0, height: 0 })
   const [camera, setCamera] = useState(defaultCamera)
   const pinch = useMapPinch(setCamera, size, zoomLimits)
+  const hive = useHivePlanner(canEdit, hiveMode)
   const [towers, setTowers] = useState<MapTower[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
+  const hiveTowers = useMemo(() => {
+    const names = new Map(hive.roster.map(player => [player.id, player.name]))
+    return hive.placements.map(placement => ({
+      ...placement, id: placement.playerId, name: names.get(placement.playerId) ?? placement.name,
+      color: '#67c5ea', createdAt: '', updatedAt: '',
+    }))
+  }, [hive.placements, hive.roster])
+  const visibleTowers = hiveMode ? hiveTowers : towers
+  const selected = hiveMode ? hive.selectedId : selectedId
+  const { bounds, chamber } = hive.settings
 
   useEffect(() => {
+    if (hiveMode) return
     let active = true
     const load = async () => {
       const [profile, roster] = await Promise.all([
@@ -61,7 +90,7 @@ function GameMap() {
       active = false
       window.removeEventListener('planner-local-change', refresh)
     }
-  }, [])
+  }, [hiveMode])
 
   useEffect(() => {
     const node = wrapRef.current
@@ -77,17 +106,26 @@ function GameMap() {
   }, [])
 
   useEffect(() => {
+    if (!hiveMode || !hive.ready || !size.width || fitted.current) return
+    fitted.current = true
+    setCamera(fitHive(bounds, size.width, size.height))
+  }, [bounds, hiveMode, hive.ready, size])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
-    if (!canvas || !ctx) return
+    if (!canvas || !ctx || !size.width) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
-    canvas.width = Math.round(size.width * dpr)
-    canvas.height = Math.round(size.height * dpr)
+    const width = Math.round(size.width * dpr), height = Math.round(size.height * dpr)
+    if (canvas.width !== width) canvas.width = width
+    if (canvas.height !== height) canvas.height = height
     canvas.style.width = `${size.width}px`
     canvas.style.height = `${size.height}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    renderBattleMap(ctx, size.width, size.height, camera, towers, { selectedId })
-  }, [size, camera, towers, selectedId])
+    renderBattleMap(ctx, size.width, size.height, camera, visibleTowers, {
+      selectedId: selected, hive: hiveMode ? { bounds, chamber, preview } : undefined,
+    })
+  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -102,10 +140,21 @@ function GameMap() {
     return () => canvas.removeEventListener('wheel', wheel)
   }, [size])
 
+  function tile(event: PointerEvent<HTMLCanvasElement>) {
+    const box = event.currentTarget.getBoundingClientRect()
+    const point = unproject(event.clientX - box.left, event.clientY - box.top, camera, size.width, size.height)
+    return { x: clampCoordinate(point.x), y: clampCoordinate(point.y) }
+  }
+
   function pan(event: PointerEvent<HTMLCanvasElement>) {
     if (pinch.move(event)) return
     const start = drag.current
     if (!start) return
+    if (start.mode === 'area') {
+      setPreview(boundsBetween(start.start, tile(event)))
+      return
+    }
+    if (start.mode !== 'pan') return
     setCamera({
       x: clampCenter(start.camera.x - (event.clientX - start.x) / (TILE_WIDTH * start.camera.zoom)),
       y: clampCenter(start.camera.y + (event.clientY - start.y) / (TILE_HEIGHT * start.camera.zoom)),
@@ -113,9 +162,30 @@ function GameMap() {
     })
   }
 
-  function endGesture(event: PointerEvent<HTMLCanvasElement>) {
+  function cancelGesture(event: PointerEvent<HTMLCanvasElement>) {
     pinch.end(event)
     drag.current = null
+    setPreview(undefined)
+  }
+
+  function endGesture(event: PointerEvent<HTMLCanvasElement>) {
+    const wasPinching = pinch.end(event)
+    const start = drag.current
+    drag.current = null
+    setPreview(undefined)
+    if (!hiveMode || wasPinching || !start) return
+    const point = tile(event)
+    if (start.mode === 'area') {
+      const area = boundsBetween(start.start, point)
+      if (hive.selectArea(area)) setCamera(fitHive(area, size.width, size.height))
+    } else if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6) {
+      hive.chooseTile(point)
+    }
+  }
+
+  function fitMap() {
+    setCamera(hiveMode ? fitHive(bounds, size.width, size.height) :
+      towers.length ? exportCamera(towers, size.width, size.height) : defaultCamera)
   }
 
   function exportPng() {
@@ -124,22 +194,31 @@ function GameMap() {
     canvas.height = 1200
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const view = exportCamera(towers, canvas.width, canvas.height)
-    renderBattleMap(ctx, canvas.width, canvas.height, view, towers, { exportMode: true })
+    const view = hiveMode ? fitHive(bounds, canvas.width, canvas.height) : exportCamera(towers, canvas.width, canvas.height)
+    renderBattleMap(ctx, canvas.width, canvas.height, view, visibleTowers, {
+      exportMode: true, hive: hiveMode ? { bounds, chamber } : undefined,
+    })
     canvas.toBlob(blob => {
       if (!blob) return
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'kvi-game-map.png'
+      link.download = hiveMode ? 'kvi-frankenstein-hive.png' : 'kvi-game-map.png'
       link.click()
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     }, 'image/png')
   }
 
-  return <main className="battle-shell">
+  return <main className={`battle-shell${hiveMode ? ' hive-shell' : ''}`}>
+    {hiveMode ? <HivePanel hive={hive}
+      focus={point => setCamera(current => ({ ...point, zoom: Math.max(current.zoom, .22) }))}
+      resetArea={() => {
+        hive.resetArea()
+        setCamera(fitHive(DEFAULT_HIVE.bounds, size.width, size.height))
+      }} /> :
     <aside className="map-sidebar">
       <header><h2>Game Map</h2><span>Last captured alliance positions</span></header>
+      <div className="shield-zone-key"><i />Gray zone · Shields unavailable</div>
       <section className="tower-list">
         <h3>Alliance members <span>{towers.length}</span></h3>
         {towers.map(tower => <button key={tower.id} type="button"
@@ -155,28 +234,36 @@ function GameMap() {
         {failed ? <div className="map-empty">Game positions could not be loaded.</div>
           : loaded && !towers.length && <div className="map-empty">Import an Alliance capture with map coordinates to place members.</div>}
       </section>
-    </aside>
+    </aside>}
     <section className="map-stage">
       <div className="map-toolbar">
         <div>
           <Button variant="secondary" aria-label="Zoom in" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom * 1.25) }))}><ZoomIn /></Button>
           <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
-          <Button variant="secondary" aria-label="Fit alliance positions" onClick={() => setCamera(towers.length ? exportCamera(towers, size.width, size.height) : defaultCamera)}><Crosshair />Fit map</Button>
+          <Button variant="secondary" aria-label={hiveMode ? 'Fit hive area' : 'Fit alliance positions'} onClick={fitMap}><Crosshair />Fit map</Button>
         </div>
         <span>{Math.round(camera.zoom * 100)}% · Pinch or scroll to zoom</span>
         <Button onClick={exportPng}><Download />Export PNG</Button>
       </div>
       <div ref={wrapRef} className="map-canvas-wrap">
-        <canvas ref={canvasRef} aria-label="Game map" className="cursor-grab active:cursor-grabbing"
+        <canvas ref={canvasRef} aria-label={hiveMode ? 'Hive plan map' : 'Game map'}
+          className={hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
           onPointerDown={event => {
             if (event.button !== 0) return
             event.currentTarget.setPointerCapture(event.pointerId)
-            drag.current = pinch.start(event) ? null : { x: event.clientX, y: event.clientY, camera }
+            if (pinch.start(event)) {
+              drag.current = null
+              setPreview(undefined)
+              return
+            }
+            const start = tile(event)
+            drag.current = { x: event.clientX, y: event.clientY, camera, start, mode: hiveMode ? hive.mode : 'pan' }
+            if (hiveMode && hive.mode === 'area') setPreview(boundsBetween(start, start))
           }}
           onPointerMove={pan}
           onPointerUp={endGesture}
-          onPointerCancel={endGesture}
-          onLostPointerCapture={endGesture}
+          onPointerCancel={cancelGesture}
+          onLostPointerCapture={cancelGesture}
         />
       </div>
     </section>
@@ -184,12 +271,14 @@ function GameMap() {
 }
 
 export function BattleMap({ canEdit = true }: { canEdit?: boolean }) {
-  const [battlefield, setBattlefield] = useState<'game' | 'black-gold'>('game')
+  const [battlefield, setBattlefield] = useState<'game' | 'hive' | 'black-gold'>('game')
   return <div className="battle-map-page">
     <nav className="battlefield-switch" aria-label="Battlefield type">
       <button className={battlefield === 'game' ? 'active' : ''} onClick={() => setBattlefield('game')}>Game Map</button>
+      <button className={battlefield === 'hive' ? 'active' : ''} onClick={() => setBattlefield('hive')}>Hive Planner</button>
       <button className={battlefield === 'black-gold' ? 'active' : ''} onClick={() => setBattlefield('black-gold')}>Black Gold Battlefield</button>
     </nav>
-    {battlefield === 'game' ? <GameMap /> : <BlackGoldBattlefield canEdit={canEdit} />}
+    {battlefield === 'black-gold' ? <BlackGoldBattlefield canEdit={canEdit} /> :
+      <GameMap key={battlefield} hiveMode={battlefield === 'hive'} canEdit={canEdit} />}
   </div>
 }

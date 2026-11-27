@@ -1,5 +1,10 @@
 export const siteUpdates = [
   {
+    date: "2026-11-27",
+    title: "Frankenstein Hive Planner",
+    summary: "The Game Map marks the gray zone. Plan up to 100 shelters around a 4 × 4 Frankenstein chamber with three layouts and custom areas.",
+  },
+  {
     date: "2026-11-26",
     title: "Planner reliability fixes",
     summary: "Rally moves preserve formations, signed-in members can open State charts, and older Alliance captures are kept in history.",
