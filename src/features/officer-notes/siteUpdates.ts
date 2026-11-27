@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Hive power display",
+    summary: "Use the Power button on the hive map to show or hide each member’s total power.",
+  },
+  {
+    date: "2026-11-27",
     title: "Concentric rings hive layout",
     summary: "Place shelters in square rings around Frankenstein with a two-tile gap between rings.",
   },

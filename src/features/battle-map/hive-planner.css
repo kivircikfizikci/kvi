@@ -52,6 +52,11 @@
 .hive-warning { background: #322719; color: #ffd7a1; }
 .hive-roster button i { background: #67c5ea; }
 .hive-roster button i.hive-manual-marker { background: #f1b968; }
+.map-toolbar .hive-power-toggle[aria-pressed='true'] {
+  color: #ffe1b4;
+  border-color: #b68547;
+  background: #322719;
+}
 .hive-targeting { cursor: crosshair; }
 .hive-middle-pan { cursor: grabbing; }
 @media (width <= 900px) {
@@ -60,4 +65,9 @@
 }
 @media (width <= 520px) {
   .battlefield-switch { flex-wrap: wrap; }
+}
+@media (width <= 350px) {
+  .hive-shell .map-toolbar { gap: 6px; padding-inline: 6px; }
+  .hive-shell .map-toolbar > div { gap: 4px; }
+  .hive-shell .map-toolbar > .btn { width: 34px; padding: 0; font-size: 0; }
 }

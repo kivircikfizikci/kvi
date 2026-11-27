@@ -1,4 +1,4 @@
-import { Crosshair, Download, LocateFixed, ZoomIn, ZoomOut } from 'lucide-react'
+import { Crosshair, Download, LocateFixed, Zap, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { Button } from '../../components/ui'
 import { db } from '../../db'
@@ -41,6 +41,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
   const [preview, setPreview] = useState<HiveAreaChange>()
   const [chamberPreview, setChamberPreview] = useState<MapPoint>()
   const [middlePan, setMiddlePan] = useState(false)
+  const [showPower, setShowPower] = useState(false)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [camera, setCamera] = useState(defaultCamera)
   const pinch = useMapPinch(setCamera, size, zoomLimits)
@@ -50,9 +51,10 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
   const hiveTowers = useMemo(() => {
-    const names = new Map(hive.roster.map(player => [player.id, player.name]))
+    const players = new Map(hive.roster.map(player => [player.id, player]))
     return hive.placements.map(placement => ({
-      ...placement, id: placement.playerId, name: names.get(placement.playerId) ?? placement.name,
+      ...placement, id: placement.playerId, name: players.get(placement.playerId)?.name ?? placement.name,
+      totalPower: players.get(placement.playerId)?.totalPower,
       color: placement.manual ? '#f1b968' : '#67c5ea', createdAt: '', updatedAt: '',
     }))
   }, [hive.placements, hive.roster])
@@ -130,12 +132,12 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     renderBattleMap(ctx, size.width, size.height, camera, visibleTowers, {
       selectedId: selected, hive: hiveMode ? {
-        bounds, chamber, preview, chamberPreview,
+        bounds, chamber, preview, chamberPreview, showPower,
         invalidChamber: Boolean(chamberPreview && hiveSettingsError({ ...hive.settings, chamber: chamberPreview })),
         editing: hive.mode === 'edit-area',
       } : undefined,
     })
-  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview, chamberPreview, hive.mode, hive.settings])
+  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview, chamberPreview, hive.mode, hive.settings, showPower])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -271,7 +273,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     if (!ctx) return
     const view = hiveMode ? fitHive(bounds, canvas.width, canvas.height) : exportCamera(towers, canvas.width, canvas.height)
     renderBattleMap(ctx, canvas.width, canvas.height, view, visibleTowers, {
-      exportMode: true, hive: hiveMode ? { bounds, chamber } : undefined,
+      exportMode: true, hive: hiveMode ? { bounds, chamber, showPower } : undefined,
     })
     canvas.toBlob(blob => {
       if (!blob) return
@@ -312,6 +314,8 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
           <Button variant="secondary" aria-label="Zoom in" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom * 1.25) }))}><ZoomIn /></Button>
           <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
           <Button variant="secondary" aria-label={hiveMode ? 'Fit hive area' : 'Fit alliance positions'} onClick={fitMap}><Crosshair />Fit map</Button>
+          {hiveMode && <Button variant="secondary" aria-label="Show power on map" aria-pressed={showPower}
+            className="hive-power-toggle" onClick={() => setShowPower(value => !value)}><Zap />Power</Button>}
         </div>
         <span>{Math.round(camera.zoom * 100)}% · Middle-drag to pan · Pinch or scroll to zoom</span>
         <Button onClick={exportPng}><Download />Export PNG</Button>
