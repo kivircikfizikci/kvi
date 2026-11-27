@@ -1,4 +1,4 @@
-import { Box, MapPin, Move, RotateCcw, Scan, Undo2, WandSparkles } from 'lucide-react'
+import { Box, Lock, MapPin, Move, Scan, Trash2, Undo2, Unlock, WandSparkles } from 'lucide-react'
 import { Button, NativeSelect } from '../../components/ui'
 import type { HiveLayout } from '../../types'
 import { formatPower } from '../../utils/format'
@@ -13,13 +13,14 @@ const layouts = [
   { value: 'lanes', label: 'Access lanes', description: 'Lanes up to two tiles wide between pairs of shelter columns.' },
 ] as const
 
-export function HivePanel({ hive, focus, resetArea }: {
+export function HivePanel({ hive, focus }: {
   hive: ReturnType<typeof useHivePlanner>
   focus: (point: { x: number; y: number }) => void
-  resetArea: () => void
 }) {
   const { bounds, chamber, layout } = hive.settings
   const players = new Map(hive.roster.map(player => [player.id, player]))
+  const roster = [...hive.roster].sort((a, b) => a.name.localeCompare(b.name))
+  const selectedShelter = hive.placements.find(placement => placement.playerId === hive.selectedId)
   return <aside className="map-sidebar hive-sidebar">
     <header>
       <h2>Hive Planner</h2>
@@ -49,15 +50,31 @@ export function HivePanel({ hive, focus, resetArea }: {
           <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'chamber'} onClick={() => hive.setMode(hive.mode === 'chamber' ? 'pan' : 'chamber')}>
             <Box />Move Frankenstein
           </Button>
-          <Button variant="secondary" disabled={!hive.editable} onClick={resetArea}><RotateCcw />Armory 3 area</Button>
-          {hive.selectedId && <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'shelter'}
-            onClick={() => hive.setMode(hive.mode === 'shelter' ? 'pan' : 'shelter')}><MapPin />Move selected</Button>}
+          <Button variant="secondary" disabled={!hive.canClear} onClick={hive.clearPlacements}><Trash2 />Clear placements</Button>
+        </div>
+        <label htmlFor="hive-manual-player">Manual placement</label>
+        <NativeSelect id="hive-manual-player" disabled={!hive.editable} value={hive.selectedId ?? ''}
+          onChange={event => {
+            hive.setSelectedId(event.target.value || undefined)
+            hive.setMode(event.target.value ? 'shelter' : 'pan')
+          }}>
+          <option value="">Select an alliance member</option>
+          {roster.map(player => <option key={player.id} value={player.id}>{player.name}</option>)}
+          {selectedShelter && !players.has(selectedShelter.playerId) &&
+            <option value={selectedShelter.playerId}>{selectedShelter.name}</option>}
+        </NativeSelect>
+        <div className="hive-actions">
+          <Button variant="secondary" disabled={!hive.editable || !hive.selectedId} aria-pressed={hive.mode === 'shelter'}
+            onClick={() => hive.setMode(hive.mode === 'shelter' ? 'pan' : 'shelter')}><MapPin />Place on map</Button>
+          {selectedShelter?.manual && <Button variant="secondary" disabled={!hive.editable} onClick={hive.releaseShelter}>
+            <Unlock />Release shelter
+          </Button>}
         </div>
         {hive.mode !== 'pan' && <p className="hive-instruction" role="status">{
           hive.mode === 'area' ? 'Drag from one corner of the hive to the opposite corner on the map.' :
             hive.mode === 'edit-area' ? 'Drag inside the area to move it. Drag an edge or corner to resize.' :
             hive.mode === 'chamber' ? 'Drag Frankenstein, or tap the new southwest tile for the chamber.' :
-              'Tap the center tile for the selected 3 × 3 shelter.'
+              'Tap the center tile to pin this 3 × 3 shelter.'
         }</p>}
         <div className="hive-actions">
           <Button disabled={!hive.editable || !hive.roster.length} onClick={hive.generate}><WandSparkles />Generate & save</Button>
@@ -79,10 +96,10 @@ export function HivePanel({ hive, focus, resetArea }: {
             hive.setSelectedId(placement.playerId)
             focus(placement)
           }}>
-          <i />
+          <i className={placement.manual ? 'hive-manual-marker' : undefined} />
           <span><strong>{player?.name ?? placement.name}{player && ` (${formatPower(player.totalPower)})`}</strong>
-            <small>X:{placement.x} · Y:{placement.y}{intersectsShieldZone(shelterBounds(placement)) && ' · Shield unavailable'}</small></span>
-          <MapPin />
+            <small>X:{placement.x} · Y:{placement.y}{placement.manual && ' · Pinned'}{intersectsShieldZone(shelterBounds(placement)) && ' · Shield unavailable'}</small></span>
+          {placement.manual ? <Lock /> : <MapPin />}
         </button>
       })}
     </section>

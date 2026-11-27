@@ -116,11 +116,16 @@ function laneCenters(anchor: number, min: number, max: number) {
   return centers.filter(center => center > min && center < max)
 }
 
-export function generateHive(settings: HiveSettings, players: readonly Player[]) {
+export function generateHive(settings: HiveSettings, players: readonly Player[], pinned: readonly Placement[] = []) {
   const error = hiveSettingsError(settings)
   if (error) return { error, placements: [], unplaced: [] }
+  for (const placement of pinned) {
+    const issue = hiveShelterError(settings, pinned, placement, placement.playerId)
+    if (issue) return { error: `${placement.name}: ${issue} Move or release this shelter first.`, placements: [], unplaced: [] }
+  }
   const { layout, bounds, chamber } = settings
   const reserved = chamberBounds(chamber)
+  const pinnedAreas = pinned.map(shelterBounds)
   const candidates: { x: number; y: number; shape: number; distance: number }[] = []
   const columns = layout === 'cross' ? crossCenters(chamber.x, bounds.minX, bounds.maxX) :
     layout === 'lanes' ? laneCenters(chamber.x, bounds.minX, bounds.maxX) :
@@ -136,31 +141,42 @@ export function generateHive(settings: HiveSettings, players: readonly Player[])
       const dy = Math.abs(y - chamber.y - 1.5)
       const shelter = shelterBounds(point)
       if (!contains(bounds, shelter) || overlaps(shelter, reserved) ||
-        obstacles.some(({ bounds }) => overlaps(shelter, bounds))) continue
+        obstacles.some(({ bounds }) => overlaps(shelter, bounds)) ||
+        pinnedAreas.some(area => overlaps(area, shelter))) continue
       const distance = distanceFromChamber(point, chamber)
       const shape = layout === 'compact' ? Math.max(dx, dy) : layout === 'cross' ? dx + dy : distance
       candidates.push({ ...point, shape, distance })
     }
   }
-  const roster = [...players].sort((a, b) =>
+  const pinnedIds = new Set(pinned.map(placement => placement.playerId))
+  const roster = players.filter(player => !pinnedIds.has(player.id)).sort((a, b) =>
     b.totalPower - a.totalPower || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
   const proximity = (a: typeof candidates[number], b: typeof candidates[number]) =>
     a.distance - b.distance || b.y - a.y || a.x - b.x
   const slots = candidates.sort((a, b) => a.shape - b.shape || proximity(a, b))
-    .slice(0, Math.min(MAX_PLAYERS, roster.length)).sort(proximity)
+    .slice(0, Math.min(Math.max(0, MAX_PLAYERS - pinned.length), roster.length)).sort(proximity)
   const placements = slots.map(({ x, y }, index): Placement => ({
     x, y, playerId: roster[index].id, name: roster[index].name,
   }))
-  return { error: null, placements, unplaced: roster.slice(slots.length) }
+  return { error: null, placements: [...pinned, ...placements], unplaced: roster.slice(slots.length) }
 }
 
-export function moveHiveShelter(plan: HivePlan, placement: Placement, point: MapPoint): HivePlan {
+function hiveShelterError(settings: HiveSettings, placements: readonly Placement[], point: MapPoint, ignore: string) {
   const shelter = shelterBounds(point)
-  if (!contains(plan.bounds, shelter)) throw new Error('Keep all 3 × 3 shelter tiles inside the hive area.')
-  if (overlaps(shelter, chamberBounds(plan.chamber))) throw new Error('This shelter overlaps Frankenstein.')
+  if (!contains(settings.bounds, shelter)) return 'Keep all 3 × 3 shelter tiles inside the hive area.'
+  if (overlaps(shelter, chamberBounds(settings.chamber))) return 'This shelter overlaps Frankenstein.'
   const obstacle = obstacles.find(({ bounds }) => overlaps(shelter, bounds))
-  if (obstacle) throw new Error(`This shelter overlaps ${obstacle.name}.`)
-  const occupied = plan.placements.find(other => other.playerId !== placement.playerId && overlaps(shelter, shelterBounds(other)))
-  if (occupied) throw new Error(`This shelter overlaps ${occupied.name}.`)
-  return { ...plan, placements: plan.placements.map(other => other.playerId === placement.playerId ? { ...other, ...point } : other) }
+  if (obstacle) return `This shelter overlaps ${obstacle.name}.`
+  const occupied = placements.find(other => other.playerId !== ignore && overlaps(shelter, shelterBounds(other)))
+  return occupied ? `This shelter overlaps ${occupied.name}.` : null
+}
+
+export function moveHiveShelter(plan: HivePlan, placement: Pick<Placement, 'playerId' | 'name'>, point: MapPoint): HivePlan {
+  const error = hiveShelterError(plan, plan.placements, point, placement.playerId)
+  if (error) throw new Error(error)
+  const existing = plan.placements.find(other => other.playerId === placement.playerId)
+  if (!existing && plan.placements.length >= MAX_PLAYERS) throw new Error('The hive already has 100 shelters.')
+  const manuallyPlaced = { ...placement, ...point, manual: true }
+  const placements = existing ? plan.placements.map(other => other === existing ? manuallyPlaced : other) : [...plan.placements, manuallyPlaced]
+  return { ...plan, placements }
 }

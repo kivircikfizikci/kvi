@@ -51,6 +51,7 @@
 }
 .hive-warning { background: #322719; color: #ffd7a1; }
 .hive-roster button i { background: #67c5ea; }
+.hive-roster button i.hive-manual-marker { background: #f1b968; }
 .hive-targeting { cursor: crosshair; }
 .hive-middle-pan { cursor: grabbing; }
 @media (width <= 900px) {

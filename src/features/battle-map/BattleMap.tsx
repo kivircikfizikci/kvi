@@ -9,7 +9,7 @@ import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import { useMapPinch, zoomMapBetween } from './useMapPinch'
 import { useHivePlanner } from './useHivePlanner'
 import { HivePanel } from './HivePanel'
-import { adjustHiveArea, boundsBetween, chamberBounds, DEFAULT_HIVE, hiveAreaHandle, hiveSettingsError, type HiveAreaChange, type HiveAreaHandle } from './hiveLayout'
+import { adjustHiveArea, boundsBetween, chamberBounds, hiveAreaHandle, hiveSettingsError, type HiveAreaChange, type HiveAreaHandle } from './hiveLayout'
 import './battle-map.css'
 import './hive-planner.css'
 
@@ -53,7 +53,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     const names = new Map(hive.roster.map(player => [player.id, player.name]))
     return hive.placements.map(placement => ({
       ...placement, id: placement.playerId, name: names.get(placement.playerId) ?? placement.name,
-      color: '#67c5ea', createdAt: '', updatedAt: '',
+      color: placement.manual ? '#f1b968' : '#67c5ea', createdAt: '', updatedAt: '',
     }))
   }, [hive.placements, hive.roster])
   const visibleTowers = hiveMode ? hiveTowers : towers
@@ -286,11 +286,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
 
   return <main className={`battle-shell${hiveMode ? ' hive-shell' : ''}`}>
     {hiveMode ? <HivePanel hive={hive}
-      focus={point => setCamera(current => ({ ...point, zoom: Math.max(current.zoom, .22) }))}
-      resetArea={() => {
-        hive.resetArea()
-        setCamera(fitHive(DEFAULT_HIVE.bounds, size.width, size.height))
-      }} /> :
+      focus={point => setCamera(current => ({ ...point, zoom: Math.max(current.zoom, .22) }))} /> :
     <aside className="map-sidebar">
       <header><h2>Game Map</h2><span>Last captured alliance positions</span></header>
       <div className="shield-zone-key"><i />Gray zone · Shields unavailable</div>

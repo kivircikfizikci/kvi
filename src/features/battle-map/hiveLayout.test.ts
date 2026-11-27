@@ -78,8 +78,30 @@ describe('Frankenstein hive planning', () => {
     const { placements } = generateHive(DEFAULT_HIVE, roster.slice(0, 2))
     const plan: HivePlan = { ...DEFAULT_HIVE, id: 'primary', placements, updatedAt: '2026-11-27' }
     expect(() => moveHiveShelter(plan, placements[0], placements[1])).toThrow('overlaps')
-    expect(moveHiveShelter(plan, placements[0], { x: 491, y: 400 }).placements[0]).toMatchObject({ x: 491, y: 400 })
+    expect(moveHiveShelter(plan, placements[0], { x: 491, y: 400 }).placements[0]).toMatchObject({ x: 491, y: 400, manual: true })
     expect(plan.placements[0]).toEqual(placements[0])
+  })
+
+  it('pins a member before generating and keeps the exact position across layouts', () => {
+    const plan: HivePlan = { ...DEFAULT_HIVE, id: 'primary', placements: [], updatedAt: '' }
+    const pinned = moveHiveShelter(plan, { playerId: roster[0].id, name: roster[0].name }, { x: 496, y: 417 }).placements
+    expect(pinned).toEqual([{ playerId: roster[0].id, name: roster[0].name, x: 496, y: 417, manual: true }])
+    for (const layout of ['compact', 'cross', 'lanes'] as const) {
+      const result = generateHive({ ...DEFAULT_HIVE, layout }, roster, pinned)
+      expect(result.error).toBeNull()
+      expect(result.placements).toHaveLength(100)
+      expect(result.placements[0]).toEqual(pinned[0])
+      expect(result.placements[1].playerId).toBe(roster[99].id)
+      expect(new Set(result.placements.map(item => item.playerId)).size).toBe(100)
+      expect(result.placements.slice(1).some(item => overlaps(shelterBounds(item), shelterBounds(pinned[0])))).toBe(false)
+    }
+  })
+
+  it('flags a pinned shelter outside new area bounds without silently moving it', () => {
+    const pinned = [{ playerId: roster[0].id, name: roster[0].name, x: 491, y: 400, manual: true }]
+    const result = generateHive({ ...DEFAULT_HIVE, bounds: { ...DEFAULT_HIVE.bounds, minX: 500 } }, roster, pinned)
+    expect(result.error).toContain(`${roster[0].name}: Keep all 3 × 3 shelter tiles inside the hive area.`)
+    expect(result.placements).toHaveLength(0)
   })
 
   it('moves the chamber and all shelters together when the area is dragged', () => {

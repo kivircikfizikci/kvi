@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Manual hive placements",
+    summary: "Pin a member to a shelter before generating the rest of the hive, or clear all shelters to start over in the same area.",
+  },
+  {
+    date: "2026-11-27",
     title: "Narrower hive lanes",
     summary: "Generated hive lanes are up to two tiles wide. Use the middle mouse button to pan Game Map and Hive Planner.",
   },

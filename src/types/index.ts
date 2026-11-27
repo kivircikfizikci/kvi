@@ -87,7 +87,7 @@ export interface HivePlan {
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
   /** Southwest tile of the 4×4 Frankenstein chamber. */
   chamber: { x: number; y: number };
-  placements: { playerId: string; name: string; x: number; y: number }[];
+  placements: { playerId: string; name: string; x: number; y: number; manual?: boolean }[];
   updatedAt: string;
 }
 export type BlackGoldTeamId = "team-a" | "team-b";

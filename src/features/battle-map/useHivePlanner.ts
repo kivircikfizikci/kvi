@@ -7,12 +7,13 @@ import { chamberBounds, DEFAULT_HIVE, defaultChamber, generateHive, hiveSettings
 import { overlaps, type MapPoint, type Rect } from './mapGeometry'
 
 type Mode = 'pan' | 'area' | 'edit-area' | 'chamber' | 'shelter'
-type HiveUndo = { saved?: HivePlan; draft?: HiveSettings; expected?: string }
+type HiveDraft = HiveSettings & Pick<HivePlan, 'placements'>
+type HiveUndo = { saved?: HivePlan; draft?: HiveDraft; expected?: string }
 
 export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   const roster = usePlannerStore(state => state.players)
   const [saved, setSaved] = useState<HivePlan>()
-  const [draft, setDraft] = useState<HiveSettings>()
+  const [draft, setDraft] = useState<HiveDraft>()
   const [ready, setReady] = useState(false)
   const [saving, setSaving] = useState(false)
   const [mode, setMode] = useState<Mode>('pan')
@@ -20,7 +21,7 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   const [feedback, setFeedback] = useState<{ text: string; error?: boolean }>()
   const [history, setHistory] = useState<HiveUndo[]>([])
   const settings = draft ?? saved ?? DEFAULT_HIVE
-  const placements = draft ? [] : saved?.placements ?? []
+  const placements = draft?.placements ?? saved?.placements ?? []
   const editable = canEdit && enabled && ready && !saving
   const canUndo = editable && history.length > 0 && history.at(-1)?.expected === saved?.updatedAt
 
@@ -43,9 +44,9 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     })
   }
 
-  function changeSettings(next: HiveSettings, nextMode: Mode = 'pan') {
+  function changeSettings(next: HiveSettings, nextMode: Mode = 'pan', proposed = placements) {
     recordUndo(saved?.updatedAt)
-    setDraft(next)
+    setDraft({ ...next, placements: proposed.filter(placement => placement.manual) })
     setSelectedId(undefined)
     setMode(nextMode)
     setFeedback(undefined)
@@ -126,7 +127,7 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
         'Hive area updated.', 'edit-area')
       return
     }
-    changeSettings(next.settings, 'edit-area')
+    changeSettings(next.settings, 'edit-area', next.placements)
     if (!next.canKeepPlacements) {
       const issue = hiveSettingsError(next.settings)
       setFeedback({ text: issue ?? 'Generate & save a new layout to apply this area.', error: Boolean(issue) })
@@ -135,17 +136,46 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
 
   function generate() {
     if (!editable || !roster.length) return
-    const result = generateHive(settings, roster)
+    const pinned = placements.filter(placement => placement.manual)
+    const result = generateHive(settings, roster, pinned)
     if (result.error || !result.placements.length) {
       setFeedback({ text: result.error ?? 'There is no room for a 3 × 3 shelter in this area.', error: true })
       return
     }
+    const placed = pinned.length
+      ? `${pinned.length} pinned · ${result.placements.length - pinned.length} generated`
+      : `${result.placements.length} members placed by total power`
     void save({
       id: 'primary', layout: settings.layout, bounds: settings.bounds, chamber: settings.chamber,
       placements: result.placements, updatedAt: new Date().toISOString(),
     }, result.unplaced.length
-      ? `${result.placements.length} placed · ${result.unplaced.length} could not fit. Draw a larger area to fit everyone.`
-      : `${result.placements.length} members placed by total power.`)
+      ? `${placed} · ${result.unplaced.length} could not fit. Draw a larger area to fit everyone.`
+      : `${placed}.`)
+  }
+
+  function savePlacements(next: HivePlan['placements'], message: string) {
+    void save({ ...settings, id: 'primary', placements: next, updatedAt: new Date().toISOString() }, message)
+  }
+
+  function clearPlacements() {
+    if (!editable || (!placements.length && !saved?.placements.length)) return
+    const issue = hiveSettingsError(settings)
+    if (issue) {
+      setFeedback({ text: issue, error: true })
+      return
+    }
+    setSelectedId(undefined)
+    savePlacements([], 'All shelters cleared.')
+  }
+
+  function releaseShelter() {
+    if (!editable || !placements.some(placement => placement.playerId === selectedId && placement.manual)) return
+    if (draft) {
+      changeSettings(settings, 'pan', placements.filter(placement => placement.playerId !== selectedId))
+      return
+    }
+    savePlacements(placements.map(placement => placement.playerId === selectedId ? { ...placement, manual: false } : placement),
+      'Shelter released. The next generation can move it.')
   }
 
   function placeChamber(point: MapPoint) {
@@ -154,6 +184,11 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     const error = hiveSettingsError(next)
     if (error) {
       setFeedback({ text: error, error: true })
+      return
+    }
+    const pinned = placements.find(placement => placement.manual && overlaps(chamberBounds(point), shelterBounds(placement)))
+    if (pinned) {
+      setFeedback({ text: `Frankenstein overlaps ${pinned.name}. Move or release that shelter first.`, error: true })
       return
     }
     const occupied = placements.some(placement => overlaps(chamberBounds(point), shelterBounds(placement)))
@@ -170,12 +205,19 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
       placeChamber(point)
       return
     }
-    if (mode === 'shelter' && editable && saved && !draft) {
-      const selected = saved.placements.find(placement => placement.playerId === selectedId)
-      if (!selected) return
+    if (mode === 'shelter' && editable && selectedId) {
+      const existing = placements.find(placement => placement.playerId === selectedId)
+      const player = roster.find(member => member.id === selectedId)
+      const name = player?.name ?? existing?.name
+      if (!name) return
+      const issue = hiveSettingsError(settings)
+      if (issue) {
+        setFeedback({ text: issue, error: true })
+        return
+      }
       try {
-        const moved = moveHiveShelter(saved, selected, point)
-        void save({ ...moved, updatedAt: new Date().toISOString() }, `${selected.name} moved to X:${point.x} Y:${point.y}.`)
+        const moved = moveHiveShelter({ ...settings, id: 'primary', placements, updatedAt: '' }, { playerId: selectedId, name }, point)
+        savePlacements(moved.placements, `${name} pinned at X:${point.x} Y:${point.y}.`)
       } catch (error) {
         setFeedback({ text: error instanceof Error ? error.message : 'This shelter could not be moved.', error: true })
       }
@@ -187,8 +229,8 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
 
   return {
     roster, settings, placements, ready, canEdit, editable, mode, setMode, selectedId, setSelectedId, feedback,
-    selectLayout, selectArea, editArea, chooseTile, placeChamber, generate, canUndo, undo,
-    resetArea: () => { if (editable) changeSettings({ ...DEFAULT_HIVE, layout: settings.layout }) },
+    selectLayout, selectArea, editArea, chooseTile, placeChamber, generate, canUndo, undo, clearPlacements, releaseShelter,
+    canClear: editable && Boolean(placements.length || saved?.placements.length),
     cancelDraft: () => {
       if (!editable || !draft) return
       recordUndo(saved?.updatedAt)
