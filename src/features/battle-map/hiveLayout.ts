@@ -116,6 +116,43 @@ function laneCenters(anchor: number, min: number, max: number) {
   return centers.filter(center => center > min && center < max)
 }
 
+// Map coordinates from the reference, anchored at the chamber's southwest tile.
+const wingedBlocks = [
+  { columns: [459, 462, 465, 482, 485, 488], rows: [445, 442, 439, 436, 423, 420, 417, 414] },
+  { columns: [469, 472, 475, 478], rows: [445, 442, 437, 434, 425, 422, 417, 414] },
+  { columns: [458, 461, 464, 467, 470, 477, 480, 483, 486, 489], rows: [431, 428] },
+]
+const steppedRows = [7, 5, 5, 3, 3, 1, 1]
+
+function layoutCenters({ layout, bounds, chamber }: HiveSettings): MapPoint[] {
+  if (layout === 'winged') {
+    return wingedBlocks.flatMap(({ columns, rows }) => columns.flatMap(x =>
+      rows.map(y => ({ x: chamber.x + x - 472, y: chamber.y + y - 428 }))))
+  }
+  if (layout === 'stepped-cross') {
+    const sides = [-1, 1] as const
+    return sides.flatMap(horizontal => sides.flatMap(vertical => {
+      const x = chamber.x + (horizontal < 0 ? -1 : 4)
+      const y = chamber.y + (vertical < 0 ? -1 : 4)
+      return steppedRows.flatMap((width, row) => Array.from({ length: width }, (_, column) => ({
+        x: x + horizontal * column * 3,
+        y: y + vertical * (row * 3 + (column === 0 ? 1 : 0)),
+      })))
+    }))
+  }
+  const columns = layout === 'cross' ? crossCenters(chamber.x, bounds.minX, bounds.maxX) :
+    layout === 'lanes' ? laneCenters(chamber.x, bounds.minX, bounds.maxX) :
+      packedCenters(chamber.x, bounds.minX, bounds.maxX)
+  const rows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY) :
+    packedCenters(chamber.y, bounds.minY, bounds.maxY)
+  const chamberRows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY, 1) : rows
+  return columns.flatMap(x => {
+    // Move the two central columns one tile away from the chamber's 4×4 corners.
+    const columnRows = x === chamber.x - 1 || x === chamber.x + 4 ? chamberRows : rows
+    return columnRows.map(y => ({ x, y }))
+  })
+}
+
 export function generateHive(settings: HiveSettings, players: readonly Player[], pinned: readonly Placement[] = []) {
   const error = hiveSettingsError(settings)
   if (error) return { error, placements: [], unplaced: [] }
@@ -127,26 +164,16 @@ export function generateHive(settings: HiveSettings, players: readonly Player[],
   const reserved = chamberBounds(chamber)
   const pinnedAreas = pinned.map(shelterBounds)
   const candidates: { x: number; y: number; shape: number; distance: number }[] = []
-  const columns = layout === 'cross' ? crossCenters(chamber.x, bounds.minX, bounds.maxX) :
-    layout === 'lanes' ? laneCenters(chamber.x, bounds.minX, bounds.maxX) :
-      packedCenters(chamber.x, bounds.minX, bounds.maxX)
-  const rows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY) :
-    packedCenters(chamber.y, bounds.minY, bounds.maxY)
-  const chamberRows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY, 1) : rows
-  for (const x of columns) {
-    // Move the two central columns one tile away from the chamber's 4×4 corners.
-    for (const y of layout === 'cross' && (x === chamber.x - 1 || x === chamber.x + 4) ? chamberRows : rows) {
-      const point = { x, y }
-      const dx = Math.abs(x - chamber.x - 1.5)
-      const dy = Math.abs(y - chamber.y - 1.5)
-      const shelter = shelterBounds(point)
-      if (!contains(bounds, shelter) || overlaps(shelter, reserved) ||
-        obstacles.some(({ bounds }) => overlaps(shelter, bounds)) ||
-        pinnedAreas.some(area => overlaps(area, shelter))) continue
-      const distance = distanceFromChamber(point, chamber)
-      const shape = layout === 'compact' ? Math.max(dx, dy) : layout === 'cross' ? dx + dy : distance
-      candidates.push({ ...point, shape, distance })
-    }
+  for (const point of layoutCenters(settings)) {
+    const shelter = shelterBounds(point)
+    if (!contains(bounds, shelter) || overlaps(shelter, reserved) ||
+      obstacles.some(({ bounds }) => overlaps(shelter, bounds)) ||
+      pinnedAreas.some(area => overlaps(area, shelter))) continue
+    const dx = Math.abs(point.x - chamber.x - 1.5)
+    const dy = Math.abs(point.y - chamber.y - 1.5)
+    const distance = distanceFromChamber(point, chamber)
+    const shape = layout === 'compact' ? Math.max(dx, dy) : layout === 'cross' ? dx + dy : distance
+    candidates.push({ ...point, shape, distance })
   }
   const pinnedIds = new Set(pinned.map(placement => placement.playerId))
   const roster = players.filter(player => !pinnedIds.has(player.id)).sort((a, b) =>

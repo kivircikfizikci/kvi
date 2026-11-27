@@ -30,7 +30,7 @@ function internalLandingPads(bounds: Rect, occupied: Rect[]) {
 }
 
 describe('Frankenstein hive planning', () => {
-  it.each<HiveLayout>(['compact', 'cross', 'lanes'])('fits 100 members in %s with the strongest nearest', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'stepped-cross'])('fits 100 members in %s with the strongest nearest', layout => {
     const settings = { ...DEFAULT_HIVE, layout }
     const { placements, unplaced, error } = generateHive(settings, roster)
     expect(error).toBeNull()
@@ -51,12 +51,45 @@ describe('Frankenstein hive planning', () => {
     }
   })
 
-  it.each<HiveLayout>(['compact', 'cross', 'lanes'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
+  it.each<HiveLayout>(['compact', 'cross', 'lanes', 'winged', 'stepped-cross'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
     const settings = { ...DEFAULT_HIVE, layout, chamber: { x: 506, y: 417 } }
     for (const count of [24, 50, 78]) {
       const { placements } = generateHive(settings, roster.slice(0, count))
       expect(placements).toHaveLength(count)
       expect(internalLandingPads(settings.bounds, [chamberBounds(settings.chamber), ...placements.map(shelterBounds)])).toEqual([])
+    }
+  })
+
+  it('preserves the reference block and wing coordinates when the chamber is moved', () => {
+    const result = generateHive({
+      layout: 'winged',
+      bounds: { minX: 454, maxX: 493, minY: 411, maxY: 446 },
+      chamber: { x: 472, y: 428 },
+    }, roster)
+    expect(result.error).toBeNull()
+    const columnsAt = (y: number) => result.placements.filter(slot => slot.y === y).map(slot => slot.x).sort((a, b) => a - b)
+    expect(columnsAt(445)).toEqual([459, 462, 465, 469, 472, 475, 478, 482, 485, 488])
+    expect(columnsAt(439)).toEqual([459, 462, 465, 482, 485, 488])
+    expect(columnsAt(434)).toEqual([469, 472, 475, 478])
+    expect(columnsAt(431)).toEqual([458, 461, 464, 467, 470, 477, 480, 483, 486, 489])
+    expect(columnsAt(425)).toEqual([469, 472, 475, 478])
+  })
+
+  it('gives each stepped cross quadrant 25 shelters in four tiers', () => {
+    const settings = { ...DEFAULT_HIVE, layout: 'stepped-cross' as const }
+    const { placements } = generateHive(settings, roster)
+    for (const horizontal of [-1, 1]) {
+      for (const vertical of [-1, 1]) {
+        const wing = placements.filter(slot =>
+          Math.sign(slot.x - settings.chamber.x - 1.5) === horizontal &&
+          Math.sign(slot.y - settings.chamber.y - 1.5) === vertical)
+        expect(wing).toHaveLength(25)
+      }
+    }
+    const eastern = placements.filter(slot => slot.x >= settings.chamber.x + 4 && slot.y >= settings.chamber.y + 4)
+    for (const [row, width] of [7, 5, 5, 3, 3, 1, 1].entries()) {
+      const y = settings.chamber.y + 4 + row * 3
+      expect(eastern.filter(slot => slot.y === y || (slot.x === settings.chamber.x + 4 && slot.y === y + 1))).toHaveLength(width)
     }
   })
 
@@ -86,7 +119,7 @@ describe('Frankenstein hive planning', () => {
     const plan: HivePlan = { ...DEFAULT_HIVE, id: 'primary', placements: [], updatedAt: '' }
     const pinned = moveHiveShelter(plan, { playerId: roster[0].id, name: roster[0].name }, { x: 496, y: 417 }).placements
     expect(pinned).toEqual([{ playerId: roster[0].id, name: roster[0].name, x: 496, y: 417, manual: true }])
-    for (const layout of ['compact', 'cross', 'lanes'] as const) {
+    for (const layout of ['compact', 'cross', 'lanes', 'winged', 'stepped-cross'] as const) {
       const result = generateHive({ ...DEFAULT_HIVE, layout }, roster, pinned)
       expect(result.error).toBeNull()
       expect(result.placements).toHaveLength(100)

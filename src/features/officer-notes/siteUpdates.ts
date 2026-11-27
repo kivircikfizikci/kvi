@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Two new hive layouts",
+    summary: "Winged blocks follows the reference grid. Stepped cross adds four stepped wings around a two-tile cross.",
+  },
+  {
+    date: "2026-11-27",
     title: "Manual hive placements",
     summary: "Pin a member to a shelter before generating the rest of the hive, or clear all shelters to start over in the same area.",
   },
