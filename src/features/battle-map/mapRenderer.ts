@@ -1,13 +1,13 @@
 import type { MapTower } from '../../types'
 import { ARMORIES, CAPITAL, CAPITAL_BLOCKED, type Camera, type MapPoint, type Rect, clampCoordinate, fixedBuildingFootprint, gridStepForZoom, MAP_MAX, project, TILE_HEIGHT, TILE_WIDTH, TURRETS, unproject } from './mapGeometry'
-import { chamberBounds } from './hiveLayout'
+import { chamberBounds, type HiveAreaChange } from './hiveLayout'
 import { SHIELD_ZONE_OUTLINE } from './shieldZone'
 
 interface RenderOptions {
   selectedId?: string | null
   pointer?: MapPoint | null
   exportMode?: boolean
-  hive?: { bounds: Rect; chamber: MapPoint; preview?: Rect }
+  hive?: { bounds: Rect; chamber: MapPoint; preview?: HiveAreaChange; editing?: boolean }
 }
 const polygon=(ctx:CanvasRenderingContext2D,points:{x:number;y:number}[])=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath()}
 function area(ctx:CanvasRenderingContext2D,camera:Camera,w:number,h:number,minX:number,maxX:number,minY:number,maxY:number,fill:string,stroke:string){const points=[{x:minX-.5,y:minY-.5},{x:maxX+.5,y:minY-.5},{x:maxX+.5,y:maxY+.5},{x:minX-.5,y:maxY+.5}].map(p=>project(p,camera,w,h));polygon(ctx,points);ctx.fillStyle=fill;ctx.fill();ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke()}
@@ -17,6 +17,12 @@ function marker(ctx:CanvasRenderingContext2D,x:number,y:number,type:'capital'|'t
 export function drawPlayerMarker(ctx:CanvasRenderingContext2D,x:number,y:number,color:string,scale:number,pawn:boolean){ctx.save();ctx.translate(x,y);ctx.shadowColor='rgba(0,0,0,.6)';ctx.shadowBlur=9;ctx.shadowOffsetY=4;ctx.fillStyle=color;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=2;if(!pawn){const r=10*scale;ctx.beginPath();ctx.moveTo(0,r);ctx.bezierCurveTo(-r*.25,r*.35,-r,-r*.05,-r,-r*.72);ctx.bezierCurveTo(-r,-r*1.35,-r*.55,-r*1.78,0,-r*1.78);ctx.bezierCurveTo(r*.55,-r*1.78,r,-r*1.35,r,-r*.72);ctx.bezierCurveTo(r,-r*.05,r*.25,r*.35,0,r);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='rgba(8,15,24,.55)';ctx.beginPath();ctx.arc(0,-r*.75,r*.3,0,Math.PI*2);ctx.fill()}else{const r=16*scale;ctx.beginPath();ctx.arc(0,-r*.72,r*.3,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.beginPath();ctx.moveTo(-r*.28,-r*.34);ctx.bezierCurveTo(-r*.18,-r*.12,-r*.2,r*.08,-r*.48,r*.42);ctx.lineTo(r*.48,r*.42);ctx.bezierCurveTo(r*.2,r*.08,r*.18,-r*.12,r*.28,-r*.34);ctx.closePath();ctx.fill();ctx.stroke();ctx.beginPath();ctx.roundRect(-r*.62,r*.38,r*1.24,r*.28,r*.12);ctx.fill();ctx.stroke();ctx.beginPath();ctx.roundRect(-r*.78,r*.62,r*1.56,r*.3,r*.12);ctx.fill();ctx.stroke()}ctx.restore()}
 
 export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,camera:Camera,towers:MapTower[],options:RenderOptions={}){
+  const offset = options.hive?.preview?.offset
+  const visibleTowers = offset ? towers.map(t => ({ ...t, x: t.x + offset.x, y: t.y + offset.y })) : towers
+  const chamber = options.hive && {
+    x: options.hive.chamber.x + (offset?.x ?? 0),
+    y: options.hive.chamber.y + (offset?.y ?? 0),
+  }
   const gradient=ctx.createLinearGradient(0,0,0,h);gradient.addColorStop(0,'#2a2524');gradient.addColorStop(1,'#17191d');ctx.fillStyle=gradient;ctx.fillRect(0,0,w,h)
   polygon(ctx, SHIELD_ZONE_OUTLINE.map(point => project(point, camera, w, h)))
   ctx.fillStyle = 'rgba(164,173,182,.18)'
@@ -34,41 +40,81 @@ export function renderBattleMap(ctx:CanvasRenderingContext2D,w:number,h:number,c
   area(ctx,camera,w,h,CAPITAL_BLOCKED.minX,CAPITAL_BLOCKED.maxX,CAPITAL_BLOCKED.minY,CAPITAL_BLOCKED.maxY,'rgba(187,63,63,.18)','rgba(255,100,100,.65)')
   for(const b of ARMORIES){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(74,112,146,.14)','rgba(103,167,221,.34)')}
   for(const b of TURRETS){const footprint=fixedBuildingFootprint(b);area(ctx,camera,w,h,footprint.minX,footprint.maxX,footprint.minY,footprint.maxY,'rgba(182,118,54,.18)','rgba(246,171,88,.5)')}
-  if (options.hive) {
-    const { bounds, chamber, preview } = options.hive
+  if (options.hive && chamber) {
+    const { bounds, preview, editing } = options.hive
     ctx.save()
     ctx.setLineDash([6, 4])
-    const box = preview ?? bounds
+    const box = preview?.bounds ?? bounds
     area(ctx, camera, w, h, box.minX, box.maxX, box.minY, box.maxY, 'rgba(231,177,95,.08)', 'rgba(252,193,108,.85)')
     ctx.restore()
     const reserved = chamberBounds(chamber)
     area(ctx, camera, w, h, reserved.minX, reserved.maxX, reserved.minY, reserved.maxY, 'rgba(134,218,104,.24)', '#a6eb8e')
+    if (editing) drawHiveAreaHandles(ctx, camera, w, h, box)
   }
-  for(const t of towers){area(ctx,camera,w,h,t.x-1,t.x+1,t.y-1,t.y+1,t.id===options.selectedId?'rgba(87,180,255,.3)':'rgba(74,146,210,.18)',t.id===options.selectedId?'#7dd3fc':t.color)}
+  for(const t of visibleTowers){area(ctx,camera,w,h,t.x-1,t.x+1,t.y-1,t.y+1,t.id===options.selectedId?'rgba(87,180,255,.3)':'rgba(74,146,210,.18)',t.id===options.selectedId?'#7dd3fc':t.color)}
   const scale=Math.max(.72,Math.min(1.35,camera.zoom*5))
   const fixed=[...ARMORIES,...TURRETS,CAPITAL].sort((a,b)=>b.y-a.y||a.x-b.x)
   for(const b of fixed){const footprint=b.type==='turret'?fixedBuildingFootprint(b):null,point=footprint?{x:(footprint.minX+footprint.maxX)/2,y:(footprint.minY+footprint.maxY)/2}:b,p=project(point,camera,w,h),color=b.type==='capital'?'#d9a52e':b.type==='turret'?'#b76b2d':'#5e7f99';marker(ctx,p.x,p.y,b.type,color,scale);if(b.type!=='turret'&&(camera.zoom>=.045||options.exportMode))drawMapLabel(ctx,p.x,p.y+30*scale,b.name,`X:${b.x}  Y:${b.y}`,color)}
-  const sortedTowers=[...towers].sort((a,b)=>b.y-a.y||a.x-b.x),showPlayerDetails=camera.zoom>=.12||Boolean(options.exportMode)
+  const sortedTowers=[...visibleTowers].sort((a,b)=>b.y-a.y||a.x-b.x),showPlayerDetails=camera.zoom>=.12||Boolean(options.exportMode)
+  const showHiveLabels = Boolean(options.hive && camera.zoom >= .38)
   for(const t of sortedTowers){
     const p=project(t,camera,w,h)
     const markerScale = options.hive ? Math.min(scale, camera.zoom * 5.5) : scale
-    drawPlayerMarker(ctx,p.x,p.y,t.id===options.selectedId?'#bceaff':t.color,markerScale,showPlayerDetails)
+    drawPlayerMarker(ctx,p.x,p.y + (showHiveLabels ? 14 : 0),t.id===options.selectedId?'#bceaff':t.color,
+      showHiveLabels ? markerScale * .55 : markerScale,showPlayerDetails)
   }
-  if (options.hive) {
-    const { x, y } = options.hive.chamber
+  if (chamber) {
+    const { x, y } = chamber
     const point = project({ x: x + 1.5, y: y + 1.5 }, camera, w, h)
     drawHiveChamber(ctx, point, Math.min(19, 53 * camera.zoom))
-    if (camera.zoom >= .045 || options.exportMode)
-      singleLabel(ctx, point.x, point.y - 27, 'Frankenstein · 4 × 4', '#a6eb8e')
   }
   if(options.pointer&&camera.zoom>=.2){const p={x:clampCoordinate(options.pointer.x),y:clampCoordinate(options.pointer.y)},s=project(p,camera,w,h),rx=(TILE_WIDTH/2)*camera.zoom,ry=(TILE_HEIGHT/2)*camera.zoom;ctx.strokeStyle='#f5a55a';ctx.lineWidth=2;ctx.strokeRect(s.x-rx,s.y-ry,rx*2,ry*2);ctx.fillStyle='#f6c48e';ctx.font='12px Inter, system-ui';ctx.fillText(`X:${p.x} Y:${p.y}`,s.x+10,s.y-10)}
   ctx.fillStyle='rgba(7,10,15,.78)';ctx.fillRect(12,h-38,255,26);ctx.fillStyle='#c5cfdd';ctx.font='12px Inter, system-ui';ctx.fillText(`Center X:${Math.round(camera.x)} Y:${Math.round(camera.y)}  ·  ${Math.round(camera.zoom*100)}%`,22,h-21)
   if(camera.zoom>=.045||options.exportMode)for(const turret of TURRETS){const footprint=fixedBuildingFootprint(turret),p=project({x:(footprint.minX+footprint.maxX)/2,y:(footprint.minY+footprint.maxY)/2},camera,w,h);singleLabel(ctx,p.x,p.y,turret.name,'#b76b2d')}
   for (const t of sortedTowers) {
-    if (options.hive ? t.id !== options.selectedId : !showPlayerDetails) continue
+    if (options.hive ? !showHiveLabels && t.id !== options.selectedId : !showPlayerDetails) continue
     const p = project(t, camera, w, h)
-    drawMapLabel(ctx, p.x, p.y - (options.hive ? 43 : 31), t.name, `X:${t.x}  Y:${t.y}`, t.color)
+    if (showHiveLabels) {
+      if (p.x < -100 || p.x > w + 100 || p.y < -70 || p.y > h + 70) continue
+      drawHiveShelterLabel(ctx, p, t, camera.zoom, t.id === options.selectedId)
+    } else {
+      drawMapLabel(ctx, p.x, p.y - (options.hive ? 43 : 31), t.name, `X:${t.x}  Y:${t.y}`, t.color)
+    }
   }
+}
+
+function drawHiveAreaHandles(ctx: CanvasRenderingContext2D, camera: Camera, width: number, height: number, bounds: Rect) {
+  const x = [bounds.minX - .5, (bounds.minX + bounds.maxX) / 2, bounds.maxX + .5]
+  const y = [bounds.minY - .5, (bounds.minY + bounds.maxY) / 2, bounds.maxY + .5]
+  ctx.fillStyle = '#ffce88'
+  ctx.strokeStyle = '#37261d'
+  ctx.lineWidth = 1.5
+  for (const [column, worldX] of x.entries()) {
+    for (const [row, worldY] of y.entries()) {
+      if (column === 1 && row === 1) continue
+      const point = project({ x: worldX, y: worldY }, camera, width, height)
+      ctx.fillRect(point.x - 4, point.y - 4, 8, 8)
+      ctx.strokeRect(point.x - 4, point.y - 4, 8, 8)
+    }
+  }
+}
+
+function drawHiveShelterLabel(ctx: CanvasRenderingContext2D, point: MapPoint, tower: MapTower, zoom: number, selected: boolean) {
+  const width = 3 * TILE_WIDTH * zoom - 6
+  const top = point.y - 1.5 * TILE_HEIGHT * zoom + 3
+  ctx.save()
+  ctx.fillStyle = selected ? '#254a5f' : '#101922'
+  ctx.beginPath()
+  ctx.roundRect(point.x - width / 2, top, width, 25, 3)
+  ctx.fill()
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#f2f7fb'
+  ctx.font = '700 11px Inter, system-ui'
+  ctx.fillText(tower.name, point.x, top + 10, width - 6)
+  ctx.fillStyle = '#a9c4d6'
+  ctx.font = '10px Inter, system-ui'
+  ctx.fillText(`X:${tower.x} Y:${tower.y}`, point.x, top + 21, width - 6)
+  ctx.restore()
 }
 
 function drawHiveChamber(ctx: CanvasRenderingContext2D, point: MapPoint, radius: number) {

@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Hive map controls",
+    summary: "Middle-drag pans the map during placement. Resize or move an existing hive area, and zoom in to see shelter names and coordinates.",
+  },
+  {
+    date: "2026-11-27",
     title: "Frankenstein Hive Planner",
     summary: "The Game Map marks the gray zone. Plan up to 100 shelters around a 4 × 4 Frankenstein chamber with three layouts and custom areas.",
   },

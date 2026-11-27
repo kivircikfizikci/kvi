@@ -30,6 +30,53 @@ export const defaultChamber = (bounds: Rect): MapPoint => ({
   y: Math.floor((bounds.minY + bounds.maxY - 3) / 2),
 })
 
+export type HiveAreaHandle = { x: -1 | 0 | 1; y: -1 | 0 | 1 }
+export type HiveAreaChange = { bounds: Rect; offset?: MapPoint }
+
+export function hiveAreaHandle(bounds: Rect, point: MapPoint, tolerance: MapPoint): HiveAreaHandle | undefined {
+  const { minX, maxX, minY, maxY } = bounds
+  if (point.x < minX - .5 - tolerance.x || point.x > maxX + .5 + tolerance.x ||
+    point.y < minY - .5 - tolerance.y || point.y > maxY + .5 + tolerance.y) return
+  const edge = (value: number, low: number, high: number, margin: number) => {
+    const left = Math.abs(value - low + .5), right = Math.abs(value - high - .5)
+    return Math.min(left, right) > margin ? 0 : left <= right ? -1 : 1
+  }
+  return { x: edge(point.x, minX, maxX, tolerance.x), y: edge(point.y, minY, maxY, tolerance.y) }
+}
+
+export function adjustHiveArea(bounds: Rect, handle: HiveAreaHandle, delta: MapPoint): HiveAreaChange {
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+  const { minX, maxX, minY, maxY } = bounds
+  if (!handle.x && !handle.y) {
+    const x = clamp(delta.x, MAP_MIN - minX, MAP_MAX - maxX)
+    const y = clamp(delta.y, MAP_MIN - minY, MAP_MAX - maxY)
+    return { bounds: { minX: minX + x, maxX: maxX + x, minY: minY + y, maxY: maxY + y }, offset: { x, y } }
+  }
+  return { bounds: {
+    minX: handle.x === -1 ? clamp(minX + delta.x, MAP_MIN, maxX - 3) : minX,
+    maxX: handle.x === 1 ? clamp(maxX + delta.x, minX + 3, MAP_MAX) : maxX,
+    minY: handle.y === -1 ? clamp(minY + delta.y, MAP_MIN, maxY - 3) : minY,
+    maxY: handle.y === 1 ? clamp(maxY + delta.y, minY + 3, MAP_MAX) : maxY,
+  } }
+}
+
+export function transformHive(plan: Pick<HivePlan, 'layout' | 'chamber' | 'placements'>, change: HiveAreaChange) {
+  const offset = change.offset ?? { x: 0, y: 0 }
+  const shift = (point: MapPoint) => ({ x: point.x + offset.x, y: point.y + offset.y })
+  const chamber = shift(plan.chamber)
+  const settings = { layout: plan.layout, bounds: change.bounds, chamber }
+  const placements = plan.placements.map(placement => ({ ...placement, ...shift(placement) }))
+  const canKeepPlacements = !hiveSettingsError(settings) && placements.every(placement => {
+    const area = shelterBounds(placement)
+    return contains(change.bounds, area) && !obstacles.some(obstacle => overlaps(area, obstacle.bounds))
+  })
+  return {
+    settings: contains(change.bounds, chamberBounds(chamber)) ? settings : { ...settings, chamber: defaultChamber(change.bounds) },
+    placements,
+    canKeepPlacements,
+  }
+}
+
 export function hiveSettingsError(settings: HiveSettings) {
   const { bounds, chamber } = settings
   if (![bounds.minX, bounds.maxX, bounds.minY, bounds.maxY, chamber.x, chamber.y].every(Number.isInteger) ||

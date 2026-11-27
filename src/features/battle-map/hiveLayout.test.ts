@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { seedPlayers } from '../../db/seed'
 import type { HiveLayout, HivePlan } from '../../types'
-import { chamberBounds, DEFAULT_HIVE, distanceFromChamber, generateHive, moveHiveShelter, shelterBounds } from './hiveLayout'
+import { adjustHiveArea, chamberBounds, DEFAULT_HIVE, distanceFromChamber, generateHive, hiveAreaHandle, moveHiveShelter, shelterBounds, transformHive } from './hiveLayout'
 import { ARMORIES, fixedBuildingFootprint, overlaps } from './mapGeometry'
 import { intersectsShieldZone, SHIELD_ZONE_OUTLINE } from './shieldZone'
 
@@ -50,6 +50,29 @@ describe('Frankenstein hive planning', () => {
     expect(() => moveHiveShelter(plan, placements[0], placements[1])).toThrow('overlaps')
     expect(moveHiveShelter(plan, placements[0], { x: 491, y: 400 }).placements[0]).toMatchObject({ x: 491, y: 400 })
     expect(plan.placements[0]).toEqual(placements[0])
+  })
+
+  it('moves the chamber and all shelters together when the area is dragged', () => {
+    const { placements } = generateHive(DEFAULT_HIVE, roster)
+    const handle = hiveAreaHandle(DEFAULT_HIVE.bounds, DEFAULT_HIVE.chamber, { x: 1, y: 1 })
+    expect(handle).toEqual({ x: 0, y: 0 })
+    const change = adjustHiveArea(DEFAULT_HIVE.bounds, handle!, { x: -5, y: -6 })
+    const moved = transformHive({ ...DEFAULT_HIVE, placements }, change)
+    expect(moved.canKeepPlacements).toBe(true)
+    expect(moved.settings.chamber).toEqual({ x: 507, y: 415 })
+    expect(moved.placements).toEqual(placements.map(item => ({ ...item, x: item.x - 5, y: item.y - 6 })))
+  })
+
+  it('resizes from a corner and flags shelters that no longer fit', () => {
+    const { bounds } = DEFAULT_HIVE
+    const handle = hiveAreaHandle(bounds, { x: bounds.minX - .5, y: bounds.maxY + .5 }, { x: 1, y: 1 })
+    expect(handle).toEqual({ x: -1, y: 1 })
+    const { placements } = generateHive(DEFAULT_HIVE, roster)
+    const change = adjustHiveArea(bounds, handle!, { x: 20, y: -10 })
+    expect(change.bounds).toEqual({ ...bounds, minX: bounds.minX + 20, maxY: bounds.maxY - 10 })
+    const proposal = transformHive({ ...DEFAULT_HIVE, placements }, change)
+    expect(proposal.canKeepPlacements).toBe(false)
+    expect(proposal.placements).toEqual(placements)
   })
 })
 

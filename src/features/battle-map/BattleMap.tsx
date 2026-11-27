@@ -9,7 +9,7 @@ import { BlackGoldBattlefield } from './BlackGoldBattlefield'
 import { useMapPinch, zoomMapBetween } from './useMapPinch'
 import { useHivePlanner } from './useHivePlanner'
 import { HivePanel } from './HivePanel'
-import { boundsBetween, DEFAULT_HIVE } from './hiveLayout'
+import { adjustHiveArea, boundsBetween, DEFAULT_HIVE, hiveAreaHandle, type HiveAreaChange, type HiveAreaHandle } from './hiveLayout'
 import './battle-map.css'
 import './hive-planner.css'
 
@@ -32,9 +32,14 @@ function fitHive(bounds: Rect, width: number, height: number): Camera {
 function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; y: number; camera: Camera; start: MapPoint; mode: ReturnType<typeof useHivePlanner>['mode'] } | null>(null)
+  const drag = useRef<{
+    x: number; y: number; pointerId: number; camera: Camera; start: MapPoint
+    mode: ReturnType<typeof useHivePlanner>['mode']; navigationOnly: boolean
+    handle?: HiveAreaHandle
+  } | null>(null)
   const fitted = useRef(false)
-  const [preview, setPreview] = useState<Rect>()
+  const [preview, setPreview] = useState<HiveAreaChange>()
+  const [middlePan, setMiddlePan] = useState(false)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [camera, setCamera] = useState(defaultCamera)
   const pinch = useMapPinch(setCamera, size, zoomLimits)
@@ -123,9 +128,9 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     canvas.style.height = `${size.height}px`
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     renderBattleMap(ctx, size.width, size.height, camera, visibleTowers, {
-      selectedId: selected, hive: hiveMode ? { bounds, chamber, preview } : undefined,
+      selectedId: selected, hive: hiveMode ? { bounds, chamber, preview, editing: hive.mode === 'edit-area' } : undefined,
     })
-  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview])
+  }, [size, camera, visibleTowers, selected, hiveMode, bounds, chamber, preview, hive.mode])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -140,18 +145,55 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     return () => canvas.removeEventListener('wheel', wheel)
   }, [size])
 
-  function tile(event: PointerEvent<HTMLCanvasElement>) {
+  function worldPoint(event: PointerEvent<HTMLCanvasElement>) {
     const box = event.currentTarget.getBoundingClientRect()
-    const point = unproject(event.clientX - box.left, event.clientY - box.top, camera, size.width, size.height)
+    return unproject(event.clientX - box.left, event.clientY - box.top, camera, size.width, size.height)
+  }
+
+  function tile(event: PointerEvent<HTMLCanvasElement>) {
+    const point = worldPoint(event)
     return { x: clampCoordinate(point.x), y: clampCoordinate(point.y) }
+  }
+
+  function areaChange(start: MapPoint, end: MapPoint, handle: HiveAreaHandle) {
+    return adjustHiveArea(bounds, handle, { x: end.x - start.x, y: end.y - start.y })
+  }
+
+  function startGesture(event: PointerEvent<HTMLCanvasElement>) {
+    const middle = event.pointerType === 'mouse' && event.button === 1
+    if (!middle && event.button !== 0) return
+    if (middle) event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    if (pinch.start(event)) {
+      drag.current = null
+      setPreview(undefined)
+      return
+    }
+    const mode = hiveMode && !middle ? hive.mode : 'pan'
+    const handle = mode === 'edit-area' ? hiveAreaHandle(bounds, worldPoint(event), {
+      x: 11 / (TILE_WIDTH * camera.zoom),
+      y: 11 / (TILE_HEIGHT * camera.zoom),
+    }) : undefined
+    const start = tile(event)
+    const navigationOnly = middle || (mode === 'edit-area' && !handle)
+    drag.current = {
+      x: event.clientX, y: event.clientY, pointerId: event.pointerId,
+      camera, start, mode: navigationOnly ? 'pan' : mode, navigationOnly, handle,
+    }
+    if (middle) setMiddlePan(true)
+    if (mode === 'area') setPreview({ bounds: boundsBetween(start, start) })
   }
 
   function pan(event: PointerEvent<HTMLCanvasElement>) {
     if (pinch.move(event)) return
     const start = drag.current
-    if (!start) return
+    if (!start || start.pointerId !== event.pointerId) return
     if (start.mode === 'area') {
-      setPreview(boundsBetween(start.start, tile(event)))
+      setPreview({ bounds: boundsBetween(start.start, tile(event)) })
+      return
+    }
+    if (start.handle) {
+      setPreview(areaChange(start.start, tile(event), start.handle))
       return
     }
     if (start.mode !== 'pan') return
@@ -164,20 +206,30 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
 
   function cancelGesture(event: PointerEvent<HTMLCanvasElement>) {
     pinch.end(event)
-    drag.current = null
-    setPreview(undefined)
+    if (drag.current?.pointerId === event.pointerId) {
+      drag.current = null
+      setPreview(undefined)
+      setMiddlePan(false)
+    }
   }
 
   function endGesture(event: PointerEvent<HTMLCanvasElement>) {
     const wasPinching = pinch.end(event)
     const start = drag.current
+    if (!start || start.pointerId !== event.pointerId) return
     drag.current = null
     setPreview(undefined)
-    if (!hiveMode || wasPinching || !start) return
+    setMiddlePan(false)
+    if (!hiveMode || wasPinching || start.navigationOnly || event.button !== 0) return
     const point = tile(event)
     if (start.mode === 'area') {
       const area = boundsBetween(start.start, point)
       if (hive.selectArea(area)) setCamera(fitHive(area, size.width, size.height))
+    } else if (start.handle) {
+      const change = areaChange(start.start, point, start.handle)
+      const box = change.bounds
+      if (box.minX !== bounds.minX || box.maxX !== bounds.maxX || box.minY !== bounds.minY || box.maxY !== bounds.maxY)
+        hive.editArea(change)
     } else if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6) {
       hive.chooseTile(point)
     }
@@ -242,24 +294,15 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
           <Button variant="secondary" aria-label="Zoom out" onClick={() => setCamera(current => ({ ...current, zoom: clampZoom(current.zoom / 1.25) }))}><ZoomOut /></Button>
           <Button variant="secondary" aria-label={hiveMode ? 'Fit hive area' : 'Fit alliance positions'} onClick={fitMap}><Crosshair />Fit map</Button>
         </div>
-        <span>{Math.round(camera.zoom * 100)}% · Pinch or scroll to zoom</span>
+        <span>{Math.round(camera.zoom * 100)}% · Middle-drag to pan · Pinch or scroll to zoom</span>
         <Button onClick={exportPng}><Download />Export PNG</Button>
       </div>
       <div ref={wrapRef} className="map-canvas-wrap">
         <canvas ref={canvasRef} aria-label={hiveMode ? 'Hive plan map' : 'Game map'}
-          className={hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
-          onPointerDown={event => {
-            if (event.button !== 0) return
-            event.currentTarget.setPointerCapture(event.pointerId)
-            if (pinch.start(event)) {
-              drag.current = null
-              setPreview(undefined)
-              return
-            }
-            const start = tile(event)
-            drag.current = { x: event.clientX, y: event.clientY, camera, start, mode: hiveMode ? hive.mode : 'pan' }
-            if (hiveMode && hive.mode === 'area') setPreview(boundsBetween(start, start))
-          }}
+          className={middlePan ? 'hive-middle-pan' : hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
+          onPointerDown={startGesture}
+          onMouseDown={event => { if (event.button === 1) event.preventDefault() }}
+          onAuxClick={event => { if (event.button === 1) event.preventDefault() }}
           onPointerMove={pan}
           onPointerUp={endGesture}
           onPointerCancel={cancelGesture}

@@ -1,4 +1,4 @@
-import { Box, MapPin, RotateCcw, Scan, WandSparkles } from 'lucide-react'
+import { Box, MapPin, Move, RotateCcw, Scan, WandSparkles } from 'lucide-react'
 import { Button, NativeSelect } from '../../components/ui'
 import type { HiveLayout } from '../../types'
 import { formatPower } from '../../utils/format'
@@ -38,26 +38,30 @@ export function HivePanel({ hive, focus, resetArea }: {
       </dl>
       {intersectsShieldZone(bounds) &&
         <p className="hive-warning">Part of this hive area is in the gray zone, where shields are unavailable.</p>}
-      {hive.editable && <>
+      {hive.canEdit && <>
         <div className="hive-actions">
-          <Button variant="secondary" aria-pressed={hive.mode === 'area'} onClick={() => hive.setMode(hive.mode === 'area' ? 'pan' : 'area')}>
+          <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'area'} onClick={() => hive.setMode(hive.mode === 'area' ? 'pan' : 'area')}>
             <Scan />Draw area
           </Button>
-          <Button variant="secondary" aria-pressed={hive.mode === 'chamber'} onClick={() => hive.setMode(hive.mode === 'chamber' ? 'pan' : 'chamber')}>
+          <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'edit-area'} onClick={() => hive.setMode(hive.mode === 'edit-area' ? 'pan' : 'edit-area')}>
+            <Move />Edit area
+          </Button>
+          <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'chamber'} onClick={() => hive.setMode(hive.mode === 'chamber' ? 'pan' : 'chamber')}>
             <Box />Place Frankenstein
           </Button>
-          <Button variant="secondary" onClick={resetArea}><RotateCcw />Armory 3 area</Button>
-          {hive.selectedId && <Button variant="secondary" aria-pressed={hive.mode === 'shelter'}
+          <Button variant="secondary" disabled={!hive.editable} onClick={resetArea}><RotateCcw />Armory 3 area</Button>
+          {hive.selectedId && <Button variant="secondary" disabled={!hive.editable} aria-pressed={hive.mode === 'shelter'}
             onClick={() => hive.setMode(hive.mode === 'shelter' ? 'pan' : 'shelter')}><MapPin />Move selected</Button>}
         </div>
         {hive.mode !== 'pan' && <p className="hive-instruction" role="status">{
           hive.mode === 'area' ? 'Drag from one corner of the hive to the opposite corner on the map.' :
+            hive.mode === 'edit-area' ? 'Drag inside the area to move it. Drag an edge or corner to resize.' :
             hive.mode === 'chamber' ? 'Tap the southwest tile of the 4 × 4 chamber.' :
               'Tap the center tile for the selected 3 × 3 shelter.'
         }</p>}
         <div className="hive-actions">
-          <Button disabled={!hive.roster.length} onClick={hive.generate}><WandSparkles />Generate & save</Button>
-          {hive.hasDraft && <Button variant="secondary" onClick={hive.cancelDraft}>Discard changes</Button>}
+          <Button disabled={!hive.editable || !hive.roster.length} onClick={hive.generate}><WandSparkles />Generate & save</Button>
+          {hive.hasDraft && <Button variant="secondary" disabled={!hive.editable} onClick={hive.cancelDraft}>Discard changes</Button>}
         </div>
       </>}
       {!hive.ready && !hive.feedback && <p>Loading the shared hive plan…</p>}

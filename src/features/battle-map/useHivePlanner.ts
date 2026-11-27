@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { db } from '../../db'
 import { usePlannerStore } from '../../store/usePlannerStore'
 import type { HiveLayout, HivePlan } from '../../types'
-import { DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, shelterBounds, type HiveSettings } from './hiveLayout'
+import { DEFAULT_HIVE, defaultChamber, generateHive, hiveSettingsError, moveHiveShelter, shelterBounds, transformHive, type HiveAreaChange, type HiveSettings } from './hiveLayout'
 import { overlaps, type MapPoint, type Rect } from './mapGeometry'
 
-type Mode = 'pan' | 'area' | 'chamber' | 'shelter'
+type Mode = 'pan' | 'area' | 'edit-area' | 'chamber' | 'shelter'
 
 export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   const roster = usePlannerStore(state => state.players)
@@ -33,10 +33,10 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     return () => subscription.unsubscribe()
   }, [enabled])
 
-  function changeSettings(next: HiveSettings) {
+  function changeSettings(next: HiveSettings, nextMode: Mode = 'pan') {
     setDraft(next)
     setSelectedId(undefined)
-    setMode('pan')
+    setMode(nextMode)
     setFeedback(undefined)
   }
 
@@ -54,7 +54,7 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
     return true
   }
 
-  async function save(plan: HivePlan, message: string) {
+  async function save(plan: HivePlan, message: string, nextMode: Mode = 'pan') {
     setSaving(true)
     try {
       await db.transaction('rw', db.hivePlans, async () => {
@@ -64,13 +64,28 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
       })
       setSaved(plan)
       setDraft(undefined)
-      setMode('pan')
+      setMode(nextMode)
       setFeedback({ text: message })
       window.dispatchEvent(new Event('planner-local-change'))
     } catch (error) {
       setFeedback({ text: error instanceof Error ? error.message : 'The hive plan could not be saved.', error: true })
     } finally {
       setSaving(false)
+    }
+  }
+
+  function editArea(change: HiveAreaChange) {
+    if (!editable) return
+    const next = transformHive({ ...settings, placements }, change)
+    if (saved && !draft && next.canKeepPlacements) {
+      void save({ ...saved, ...next.settings, placements: next.placements, updatedAt: new Date().toISOString() },
+        'Hive area updated.', 'edit-area')
+      return
+    }
+    changeSettings(next.settings, 'edit-area')
+    if (!next.canKeepPlacements) {
+      const issue = hiveSettingsError(next.settings)
+      setFeedback({ text: issue ?? 'Generate & save a new layout to apply this area.', error: Boolean(issue) })
     }
   }
 
@@ -113,8 +128,8 @@ export function useHivePlanner(canEdit: boolean, enabled: boolean) {
   }
 
   return {
-    roster, settings, placements, ready, editable, mode, setMode, selectedId, setSelectedId, feedback,
-    selectLayout, selectArea, chooseTile, generate,
+    roster, settings, placements, ready, canEdit, editable, mode, setMode, selectedId, setSelectedId, feedback,
+    selectLayout, selectArea, editArea, chooseTile, generate,
     resetArea: () => { if (editable) changeSettings({ ...DEFAULT_HIVE, layout: settings.layout }) },
     cancelDraft: () => { setDraft(undefined); setMode('pan'); setFeedback(undefined) },
     hasDraft: Boolean(draft),
