@@ -34,7 +34,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
   const wrapRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{
     x: number; y: number; pointerId: number; camera: Camera; start: MapPoint
-    mode: ReturnType<typeof useHivePlanner>['mode']; navigationOnly: boolean
+    mode: ReturnType<typeof useHivePlanner>['mode']; navigationOnly: boolean; canPan: boolean
     handle?: HiveAreaHandle; chamberOffset?: MapPoint
   } | null>(null)
   const fitted = useRef(false)
@@ -192,6 +192,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
     drag.current = {
       x: event.clientX, y: event.clientY, pointerId: event.pointerId,
       camera, start, mode: navigationOnly ? 'pan' : mode, navigationOnly, handle,
+      canPan: middle || event.pointerType === 'touch',
       chamberOffset: grabbedChamber ? { x: start.x - chamber.x, y: start.y - chamber.y } : undefined,
     }
     if (middle) setMiddlePan(true)
@@ -214,7 +215,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
       setPreview(areaChange(start.start, tile(event), start.handle))
       return
     }
-    if (start.mode !== 'pan') return
+    if (start.mode !== 'pan' || !start.canPan) return
     setCamera({
       x: clampCenter(start.camera.x - (event.clientX - start.x) / (TILE_WIDTH * start.camera.zoom)),
       y: clampCenter(start.camera.y + (event.clientY - start.y) / (TILE_HEIGHT * start.camera.zoom)),
@@ -321,7 +322,7 @@ function GameMap({ hiveMode, canEdit }: { hiveMode: boolean; canEdit: boolean })
       </div>
       <div ref={wrapRef} className="map-canvas-wrap">
         <canvas ref={canvasRef} aria-label={hiveMode ? 'Hive plan map' : 'Game map'}
-          className={middlePan || chamberPreview ? 'hive-middle-pan' : hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : 'cursor-grab active:cursor-grabbing'}
+          className={middlePan || chamberPreview ? 'hive-middle-pan' : hiveMode && hive.mode !== 'pan' ? 'hive-targeting' : undefined}
           onPointerDown={startGesture}
           onMouseDown={event => { if (event.button === 1) event.preventDefault() }}
           onAuxClick={event => { if (event.button === 1) event.preventDefault() }}

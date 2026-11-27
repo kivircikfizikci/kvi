@@ -1,6 +1,11 @@
 export const siteUpdates = [
   {
     date: "2026-11-27",
+    title: "Narrower hive lanes",
+    summary: "Generated hive lanes are up to two tiles wide. Use the middle mouse button to pan Game Map and Hive Planner.",
+  },
+  {
+    date: "2026-11-27",
     title: "Hive drag and undo",
     summary: "Drag Frankenstein directly on the map and undo recent hive edits while the planner is open.",
   },

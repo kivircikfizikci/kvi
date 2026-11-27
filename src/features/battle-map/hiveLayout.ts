@@ -93,20 +93,47 @@ export function hiveSettingsError(settings: HiveSettings) {
 export const distanceFromChamber = (point: MapPoint, chamber: MapPoint) =>
   Math.hypot(point.x - chamber.x - 1.5, point.y - chamber.y - 1.5)
 
+function packedCenters(anchor: number, min: number, max: number) {
+  const start = anchor + 3 * Math.ceil((min + 1 - anchor) / 3)
+  const centers: number[] = []
+  for (let center = start; center < max; center += 3) centers.push(center)
+  return centers
+}
+
+function crossCenters(anchor: number, min: number, max: number, clearance = 0) {
+  // The two inside edges leave exactly the center two tiles open.
+  return [
+    ...packedCenters(anchor - 1 - clearance, min, anchor - clearance),
+    ...packedCenters(anchor + 4 + clearance, anchor + 3 + clearance, max),
+  ]
+}
+
+function laneCenters(anchor: number, min: number, max: number) {
+  const centers = [anchor, anchor + 3]
+  // The pair containing the chamber gets a one-tile lane on each side.
+  for (let center = anchor - 4; center > min; center -= 8) centers.push(center, center - 3)
+  for (let center = anchor + 7; center < max; center += 8) centers.push(center, center + 3)
+  return centers.filter(center => center > min && center < max)
+}
+
 export function generateHive(settings: HiveSettings, players: readonly Player[]) {
   const error = hiveSettingsError(settings)
   if (error) return { error, placements: [], unplaced: [] }
   const { layout, bounds, chamber } = settings
   const reserved = chamberBounds(chamber)
   const candidates: { x: number; y: number; shape: number; distance: number }[] = []
-  const rowStart = chamber.y + 1 - 3 * Math.floor((chamber.y - bounds.minY) / 3)
-  const columnStart = chamber.x + 1 - 3 * Math.floor((chamber.x - bounds.minX) / 3)
-  for (let x = columnStart, column = 0; x < bounds.maxX; x += layout === 'lanes' && column % 2 === 1 ? 5 : 3, column++) {
-    for (let y = rowStart; y < bounds.maxY; y += 3) {
+  const columns = layout === 'cross' ? crossCenters(chamber.x, bounds.minX, bounds.maxX) :
+    layout === 'lanes' ? laneCenters(chamber.x, bounds.minX, bounds.maxX) :
+      packedCenters(chamber.x, bounds.minX, bounds.maxX)
+  const rows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY) :
+    packedCenters(chamber.y, bounds.minY, bounds.maxY)
+  const chamberRows = layout === 'cross' ? crossCenters(chamber.y, bounds.minY, bounds.maxY, 1) : rows
+  for (const x of columns) {
+    // Move the two central columns one tile away from the chamber's 4×4 corners.
+    for (const y of layout === 'cross' && (x === chamber.x - 1 || x === chamber.x + 4) ? chamberRows : rows) {
       const point = { x, y }
       const dx = Math.abs(x - chamber.x - 1.5)
       const dy = Math.abs(y - chamber.y - 1.5)
-      if (layout === 'cross' && (dx < 2.5 || dy < 2.5)) continue
       const shelter = shelterBounds(point)
       if (!contains(bounds, shelter) || overlaps(shelter, reserved) ||
         obstacles.some(({ bounds }) => overlaps(shelter, bounds))) continue

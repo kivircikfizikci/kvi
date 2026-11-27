@@ -9,8 +9,8 @@ import type { useHivePlanner } from './useHivePlanner'
 
 const layouts = [
   { value: 'compact', label: 'Compact', description: 'A packed block of 3 × 3 shelters.' },
-  { value: 'cross', label: 'Cross', description: 'Four wings with two open corridors through the chamber.' },
-  { value: 'lanes', label: 'Access lanes', description: 'Two-tile lanes between pairs of shelter columns.' },
+  { value: 'cross', label: 'Cross', description: 'Four wings with corridors up to two tiles wide.' },
+  { value: 'lanes', label: 'Access lanes', description: 'Lanes up to two tiles wide between pairs of shelter columns.' },
 ] as const
 
 export function HivePanel({ hive, focus, resetArea }: {

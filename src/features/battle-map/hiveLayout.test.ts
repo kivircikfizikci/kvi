@@ -2,12 +2,32 @@ import { describe, expect, it } from 'vitest'
 import { seedPlayers } from '../../db/seed'
 import type { HiveLayout, HivePlan } from '../../types'
 import { adjustHiveArea, chamberBounds, DEFAULT_HIVE, distanceFromChamber, generateHive, hiveAreaHandle, moveHiveShelter, shelterBounds, transformHive } from './hiveLayout'
-import { ARMORIES, fixedBuildingFootprint, overlaps } from './mapGeometry'
+import { ARMORIES, fixedBuildingFootprint, overlaps, type Rect } from './mapGeometry'
 import { intersectsShieldZone, SHIELD_ZONE_OUTLINE } from './shieldZone'
 
 const roster = Array.from({ length: 100 }, (_, index) => ({
   ...seedPlayers()[0], id: String(index), name: `Member ${index}`, totalPower: (index + 1) * 1_000_000,
 }))
+
+function internalLandingPads(bounds: Rect, occupied: Rect[]) {
+  const pads: Rect[] = []
+  for (let x = bounds.minX; x <= bounds.maxX - 2; x++) {
+    for (let y = bounds.minY; y <= bounds.maxY - 2; y++) {
+      const pad = { minX: x, maxX: x + 2, minY: y, maxY: y + 2 }
+      if (occupied.some(area => overlaps(area, pad))) continue
+      const across = [y, y + 1, y + 2].every(row => {
+        const plots = occupied.filter(area => area.minY <= row && area.maxY >= row)
+        return plots.some(area => area.maxX < x) && plots.some(area => area.minX > pad.maxX)
+      })
+      const vertical = [x, x + 1, x + 2].every(col => {
+        const plots = occupied.filter(area => area.minX <= col && area.maxX >= col)
+        return plots.some(area => area.maxY < y) && plots.some(area => area.minY > pad.maxY)
+      })
+      if (across || vertical) pads.push(pad)
+    }
+  }
+  return pads
+}
 
 describe('Frankenstein hive planning', () => {
   it.each<HiveLayout>(['compact', 'cross', 'lanes'])('fits 100 members in %s with the strongest nearest', layout => {
@@ -18,6 +38,7 @@ describe('Frankenstein hive planning', () => {
     expect(unplaced).toHaveLength(0)
     expect(placements[0].playerId).toBe('99')
     const chamber = chamberBounds(settings.chamber)
+    expect(internalLandingPads(settings.bounds, [chamber, ...placements.map(shelterBounds)])).toEqual([])
     for (const [index, placement] of placements.entries()) {
       const area = shelterBounds(placement)
       expect(overlaps(area, chamber)).toBe(false)
@@ -27,6 +48,15 @@ describe('Frankenstein hive planning', () => {
       expect(placement.playerId).toBe(String(99 - index))
       if (index > 0) expect(distanceFromChamber(placement, settings.chamber))
         .toBeGreaterThanOrEqual(distanceFromChamber(placements[index - 1], settings.chamber))
+    }
+  })
+
+  it.each<HiveLayout>(['compact', 'cross', 'lanes'])('keeps the gaps below 3 × 3 with fewer members and a moved chamber in %s', layout => {
+    const settings = { ...DEFAULT_HIVE, layout, chamber: { x: 506, y: 417 } }
+    for (const count of [24, 50, 78]) {
+      const { placements } = generateHive(settings, roster.slice(0, count))
+      expect(placements).toHaveLength(count)
+      expect(internalLandingPads(settings.bounds, [chamberBounds(settings.chamber), ...placements.map(shelterBounds)])).toEqual([])
     }
   })
 
